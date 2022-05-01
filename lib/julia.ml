@@ -47,7 +47,7 @@ module Hsv = struct
 end
 
 let color ?(max_iter = 64) z c =
-  let make_rgb hue i = Hsv.to_rgb @@ Hsv.make hue (i = max_iter - 1) in
+  let make_rgb hue i = Hsv.to_rgb @@ Hsv.make hue (i >= max_iter) in
   let rec loop i z hue =
     if i < max_iter
     then begin
@@ -68,9 +68,10 @@ let blit buf ~pitch ~c =
   let nrows = Bigarray.Array1.dim buf / pitch in
   let ncols = pitch / 3 in
   let pixel_to_z x y =
+    let center i = 0.5 +. Float.of_int i in
     let q =
-      let re = (0.5 +. Float.of_int x) /. Float.of_int ncols in
-      let im = (0.5 +. Float.of_int y) /. Float.of_int nrows in
+      let re = center x /. Float.of_int ncols in
+      let im = center y /. Float.of_int nrows in
       Complex.create ~re ~im
     in
     Complex.scale Complex.Infix.(q - Complex.create ~re:0.5 ~im:0.5) 4.0
