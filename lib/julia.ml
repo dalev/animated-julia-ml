@@ -64,18 +64,20 @@ let color ?(max_iter = 64) z c =
   loop 0 z 0.0
 ;;
 
+let pixel_to_complex ~width ~height x y =
+  let center i = 0.5 +. Float.of_int i in
+  let q =
+    let re = center x /. Float.of_int width in
+    let im = center y /. Float.of_int height in
+    Complex.create ~re ~im
+  in
+  Complex.scale Complex.Infix.(q - Complex.create ~re:0.5 ~im:0.5) 4.0
+;;
+
 let blit buf ~pitch ~c ~max_iter =
   let nrows = Bigarray.Array1.dim buf / pitch in
   let ncols = pitch / 3 in
-  let pixel_to_z x y =
-    let center i = 0.5 +. Float.of_int i in
-    let q =
-      let re = center x /. Float.of_int ncols in
-      let im = center y /. Float.of_int nrows in
-      Complex.create ~re ~im
-    in
-    Complex.scale Complex.Infix.(q - Complex.create ~re:0.5 ~im:0.5) 4.0
-  in
+  let pixel_to_z x y = pixel_to_complex ~width:ncols ~height:nrows x y in
   for y = 0 to nrows - 1 do
     let y_off = y * pitch in
     for x = 0 to ncols - 1 do

@@ -1,3 +1,5 @@
 (library
  (name animated_julia)
- (libraries base cmdliner lwt lwt.unix time_now tsdl unix))
+ (libraries base cmdliner lwt lwt.unix time_now tsdl unix)
+ (preprocess
+  (pps ppx_sexp_message)))
