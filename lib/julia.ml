@@ -64,7 +64,7 @@ let color ?(max_iter = 64) z c =
   loop 0 z 0.0
 ;;
 
-let blit buf ~pitch ~c =
+let blit buf ~pitch ~c ~max_iter =
   let nrows = Bigarray.Array1.dim buf / pitch in
   let ncols = pitch / 3 in
   let pixel_to_z x y =
@@ -80,7 +80,7 @@ let blit buf ~pitch ~c =
     let y_off = y * pitch in
     for x = 0 to ncols - 1 do
       let z = pixel_to_z x y in
-      let { Rgb.r; g; b } = color z c in
+      let { Rgb.r; g; b } = color z c ~max_iter in
       let offset = y_off + (x * 3) in
       buf.{offset + 0} <- r;
       buf.{offset + 1} <- g;

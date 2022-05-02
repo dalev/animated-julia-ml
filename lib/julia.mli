@@ -12,4 +12,5 @@ val blit
   :  (int, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t
   -> pitch:int
   -> c:Complex.t
+  -> max_iter:int
   -> unit

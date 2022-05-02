@@ -13,22 +13,18 @@ let log_err fmt =
   Lwt_fmt.eprintf (fmt ^^ "@.")
 ;;
 
-let event_loop push_sdl_stream =
+let event_loop handler =
   let open Tsdl in
   let e = Sdl.Event.create () in
   let rec loop () =
     if Sdl.poll_event (Some e)
     then begin
       match Sdl.Event.(enum (get e typ)) with
-      | `Quit ->
-        push_sdl_stream None;
-        Lwt.return_unit
       | `Drop_file ->
         Sdl.Event.drop_file_free e;
         loop ()
-      | evt ->
-        push_sdl_stream @@ Some evt;
-        let* () = Lwt.pause () in
+      | _ ->
+        let* () = handler e in
         loop ()
     end
     else
@@ -39,7 +35,7 @@ let event_loop push_sdl_stream =
   loop ()
 ;;
 
-let render_loop r t ~stop =
+let render_loop r t ~stop ~max_iter =
   let open Tsdl in
   let frame_counter = ref 0 in
   Lwt.async (fun () ->
@@ -73,7 +69,7 @@ let render_loop r t ~stop =
     match Sdl.lock_texture t None Bigarray.Int8_unsigned with
     | Ok (buf, pitch) ->
       let c = make_c @@ now () in
-      Julia.blit buf ~pitch ~c;
+      Julia.blit buf ~pitch ~c ~max_iter;
       Sdl.unlock_texture t;
       ok' @@ Sdl.set_render_target r None;
       ok' @@ Sdl.set_render_draw_color r 0 0 0 0;
@@ -89,18 +85,9 @@ let render_loop r t ~stop =
   loop ()
 ;;
 
-let lwt_main sdl_stream renderer texture =
-  let stream_done =
-    Lwt_stream.iter_s (fun (_ : Tsdl.Sdl.Event.enum) -> Lwt.return_unit) sdl_stream
-  in
-  Lwt.async (fun () -> render_loop renderer texture ~stop:stream_done);
-  stream_done
-;;
-
-let main' () =
+let main' ~max_iter =
   let open Tsdl in
   let inits = Sdl.Init.(video + events) in
-  let sdl_stream, push_sdl_stream = Lwt_stream.create () in
   match Sdl.init inits with
   | Error (`Msg e) -> log_err " SDL init: %s" e
   | Ok () ->
@@ -110,35 +97,52 @@ let main' () =
     (match Sdl.create_window ~w ~h "SDL events" flags with
     | Error (`Msg e) -> log_err " Create window: %s" e
     | Ok window ->
-      let r =
+      let renderer =
         let flags = Sdl.Renderer.(presentvsync + accelerated) in
         ok' @@ Sdl.create_renderer ~flags window
       in
-      let t =
+      (* Sdl.get_renderer_output_size renderer *)
+      let texture =
         ok'
-        @@ Sdl.create_texture r Sdl.Pixel.format_rgb24 Sdl.Texture.access_streaming ~w ~h
+        @@ Sdl.create_texture
+             renderer
+             Sdl.Pixel.format_rgb24
+             Sdl.Texture.access_streaming
+             ~w
+             ~h
       in
+      let stop, stop_resolver = Lwt.wait () in
+      let handle_evt e =
+        match Sdl.Event.(enum (get e typ)) with
+        | `Quit ->
+          Lwt.wakeup stop_resolver ();
+          Lwt.return_unit
+        | _ -> Lwt.return_unit
+      in
+      Lwt.async (fun () -> render_loop renderer texture ~stop ~max_iter);
       Lwt.async (fun () ->
-          let+ () = event_loop push_sdl_stream in
-          Sdl.destroy_renderer r;
-          Sdl.destroy_texture t;
+          let+ () = event_loop handle_evt in
+          Sdl.destroy_renderer renderer;
+          Sdl.destroy_texture texture;
           Sdl.destroy_window window;
           Sdl.quit ());
-      lwt_main sdl_stream r t)
+      stop)
 ;;
 
-let main () =
+let main ~max_iter =
   let backend = Lwt_engine.Ev_backend.kqueue in
   let engine = new Lwt_engine.libev ~backend () in
   Lwt_engine.set engine;
-  Lwt_main.run @@ main' ()
+  Lwt_main.run @@ main' ~max_iter
 ;;
 
 let cmd =
   let open Cmdliner in
   let man = [ `S Manpage.s_description; `P "Draw a fractal" ] in
   let sdocs = Manpage.s_common_options in
+  let docs = Manpage.s_options in
   let doc = "Draw a fractal" in
   let info = Cmd.info "animated_julia" ~doc ~sdocs ~man in
-  Cmd.v info Term.(const main $ Term.const ())
+  let max_iter = Arg.(value & opt int 64 & info [ "max-iter" ] ~docs ~doc ~docv:"INT") in
+  Cmd.v info Term.(const (fun max_iter -> main ~max_iter) $ max_iter)
 ;;
