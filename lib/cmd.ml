@@ -49,7 +49,7 @@ end
 module State : sig
   type t
 
-  val create : unit -> t Or_error.t
+  val create : no_vsync:bool -> unit -> t Or_error.t
   val out_of_date : t -> bool
   val set_up_to_date : t -> unit
   val handle_event : t -> Event.t -> unit Lwt.t
@@ -107,17 +107,20 @@ end = struct
       Lwt.return_unit
   ;;
 
-  let create () =
+  let create ~no_vsync () =
     let stop, stop_resolver = Lwt.wait () in
     let w = 640
     and h = 480 in
     let flags = Sdl.Window.(shown + mouse_focus + resizable) in
-    match Sdl.create_window ~w ~h "SDL events" flags with
+    match Sdl.create_window ~w ~h "Animated Julia Fractal" flags with
     | Error (`Msg e) -> Or_error.error_s [%message "Create window" (e : string)]
     | Ok window ->
       let renderer =
-        (* let flags = Sdl.Renderer.(presentvsync + accelerated) in *)
-        let flags = Sdl.Renderer.accelerated in
+        let flags =
+          if no_vsync
+          then Sdl.Renderer.accelerated
+          else Sdl.Renderer.(presentvsync + accelerated)
+        in
         ok' @@ Sdl.create_renderer ~flags window
       in
       let texture =
@@ -184,52 +187,64 @@ let render_loop s ~max_iter =
         if Lwt.is_sleeping stop then frame_rate_loop () else Lwt.return_unit
       in
       frame_rate_loop ());
-  let rps = [ 7.0; 13.0 ] in
+  let rps = [ 7.0; 13.0; 17.0 ] in
   let angles t = List.map rps ~f:(fun rps -> t *. 2.0 *. Float.pi /. rps) in
-  let _make_c t =
+  let make_c t =
     fst
-    @@ List.fold (angles t) ~init:(Complex.zero, 1.0) ~f:(fun (c, coeff) angle ->
+    @@ List.fold (angles t) ~init:(Complex.zero, 1.2) ~f:(fun (c, coeff) angle ->
            ( Complex.Infix.(c + Complex.(scale (polar ~radius:1.0 ~angle) coeff))
            , coeff *. 2.0 /. 3.0 ))
   in
-  let _now =
+  let now =
     let t0 = Time_now.nanoseconds_since_unix_epoch () in
     fun () ->
       let ns = Int63.(Time_now.nanoseconds_since_unix_epoch () - t0) in
       Float.of_int63 ns *. 1e-9
   in
   let r = State.renderer s in
-  let rec loop () =
+  let dt = 1 // 100 in
+  let rec loop ~total_time ~accum ~current_time =
+    let new_time = now () in
+    let frame_time = new_time -. current_time in
+    let accum = accum +. frame_time in
+    let accum, total_time =
+      let rec loop ~accum ~total_time =
+        if Float.O.(accum >= dt)
+        then
+          (* integrate state t dt; *)
+          loop ~accum:(accum -. dt) ~total_time:(total_time +. dt)
+        else accum, total_time
+      in
+      loop ~accum ~total_time
+    in
     let t = State.texture s in
     match Sdl.lock_texture t None Bigarray.Int8_unsigned with
     | Ok (buf, pitch) ->
-      let c = State.c s in
-      if State.out_of_date s
-      then begin
-        State.set_up_to_date s;
-        Julia.blit buf ~pitch ~c ~max_iter
-      end;
+      (* let c = State.c s in *)
+      let c = make_c total_time in
+      Julia.blit buf ~pitch ~c ~max_iter;
       Sdl.unlock_texture t;
       ok' @@ Sdl.set_render_target r None;
       ok' @@ Sdl.set_render_draw_color r 0 0 0 0;
       ok' @@ Sdl.render_clear r;
       ok' @@ Sdl.render_copy r t;
-      (* CR dalev: does render_present block or simply schedule the presentation for the next vsync? *)
       Sdl.render_present r;
       Int.incr frame_counter;
       let* () = Lwt.pause () in
-      if Lwt.is_sleeping stop then loop () else Lwt.return_unit
+      if Lwt.is_sleeping stop
+      then loop ~total_time ~current_time:new_time ~accum
+      else Lwt.return_unit
     | Error (`Msg e) -> Lwt.fail_with @@ "lock_texture: " ^ e
   in
-  loop ()
+  loop ~total_time:0.0 ~accum:0.0 ~current_time:(now ())
 ;;
 
-let main' ~max_iter =
+let main' ~max_iter ~no_vsync =
   let inits = Sdl.Init.(video + events) in
   match Sdl.init inits with
   | Error (`Msg e) -> log_err " SDL init: %s" e
   | Ok () ->
-    (match State.create () with
+    (match State.create ~no_vsync () with
     | Error e -> Lwt.fail (Error.to_exn e)
     | Ok state ->
       Lwt.async (fun () -> render_loop state ~max_iter);
@@ -242,11 +257,11 @@ let main' ~max_iter =
       State.stopped state)
 ;;
 
-let main max_iter =
+let main max_iter no_vsync =
   let backend = Lwt_engine.Ev_backend.kqueue in
   let engine = new Lwt_engine.libev ~backend () in
   Lwt_engine.set engine;
-  Lwt_main.run @@ main' ~max_iter
+  Lwt_main.run @@ main' ~max_iter ~no_vsync
 ;;
 
 let cmd =
@@ -260,5 +275,9 @@ let cmd =
     let doc = "Max iterations to decide if point 'escapes' the Julia set" in
     Arg.(value & opt int 32 & info [ "max-iter" ] ~docs ~doc ~docv:"INT")
   in
-  Cmd.v info Term.(const main $ max_iter)
+  let no_vsync =
+    let doc = "Disable vsync" in
+    Arg.(value & flag & info [ "no-vsync" ] ~docs ~doc)
+  in
+  Cmd.v info Term.(const main $ max_iter $ no_vsync)
 ;;
