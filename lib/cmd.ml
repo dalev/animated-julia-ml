@@ -111,10 +111,16 @@ end = struct
     let stop, stop_resolver = Lwt.wait () in
     let w = 640
     and h = 480 in
-    let flags = Sdl.Window.(shown + mouse_focus + resizable) in
+    let flags = Sdl.Window.(shown + mouse_focus + resizable + vulkan) in
     match Sdl.create_window ~w ~h "Animated Julia Fractal" flags with
     | Error (`Msg e) -> Or_error.error_s [%message "Create window" (e : string)]
     | Ok window ->
+      let req_vulkan_exts = Sdl.Vulkan.get_instance_extensions window in
+      Caml.Format.printf
+        "vulkan extensions: @[%a@]\n"
+        Fmt.(option (list ~sep:Fmt.sp string))
+        req_vulkan_exts;
+      Caml.Format.pp_print_flush Caml.Format.std_formatter ();
       let renderer =
         let flags =
           if no_vsync
@@ -205,7 +211,10 @@ let render_loop s ~max_iter =
   let dt = 1 // 100 in
   let rec loop ~total_time ~accum ~current_time =
     let new_time = now () in
-    let frame_time = new_time -. current_time in
+    let frame_time =
+      (* CR dalev: review this clamp *)
+      Float.clamp_exn (new_time -. current_time) ~min:dt ~max:(1 // 60)
+    in
     let accum = accum +. frame_time in
     let accum, total_time =
       let rec loop ~accum ~total_time =
@@ -222,6 +231,7 @@ let render_loop s ~max_iter =
     | Ok (buf, pitch) ->
       (* let c = State.c s in *)
       let c = make_c total_time in
+      (* let* () = Lwt_preemptive.detach (fun () -> Julia.blit buf ~pitch ~c ~max_iter) () in *)
       Julia.blit buf ~pitch ~c ~max_iter;
       Sdl.unlock_texture t;
       ok' @@ Sdl.set_render_target r None;
