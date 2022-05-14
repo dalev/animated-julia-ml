@@ -4,10 +4,13 @@ module Complex = C
 open Lwt.Syntax
 module Sdl = Tsdl.Sdl
 
-let ok' = function
-  | Ok x -> x
-  | Error (`Msg e) -> failwith e
-;;
+module Sdl_result_syntax = struct
+  let ( let+ ) m f =
+    match m with
+    | Ok x -> Lwt.return @@ f x
+    | Error (`Msg msg) -> Lwt.fail_with msg
+  ;;
+end
 
 let log_err fmt =
   let open Caml in
@@ -46,17 +49,35 @@ module Event = struct
   ;;
 end
 
+module Age = struct
+  type 'a t =
+    | New of 'a
+    | Old of 'a
+end
+
+module Mode = struct
+  type t =
+    | Animate
+    | Follow_mouse
+
+  let term =
+    let open Cmdliner in
+    let doc = "Animate automatically or follow the mouse pointer" in
+    let choices = [ "animate", Animate; "follow-mouse", Follow_mouse ] in
+    let docv = String.concat ~sep:"|" (List.map ~f:fst choices) in
+    Arg.(value & opt (enum choices) Animate & info [ "mode" ] ~docv ~doc)
+  ;;
+end
+
 module State : sig
   type t
 
   val create : no_vsync:bool -> unit -> t Or_error.t
-  val out_of_date : t -> bool
-  val set_up_to_date : t -> unit
-  val handle_event : t -> Event.t -> unit Lwt.t
+  val handle_event : Mode.t -> (t -> Event.t -> unit Lwt.t) Staged.t
   val stopped : t -> unit Lwt.t
   val renderer : t -> Tsdl.Sdl.renderer
   val texture : t -> Tsdl.Sdl.texture
-  val c : t -> Complex.t
+  val c : t -> Complex.t Age.t
   val destroy_sdl_resources : t -> unit
 end = struct
   type t =
@@ -71,40 +92,48 @@ end = struct
 
   let renderer t = t.renderer
   let texture t = t.texture
-  let c t = t.c
+  let c t = if t.out_of_date then Age.New t.c else Age.Old t.c
   let stopped t = t.stop
-  let out_of_date t = t.out_of_date
-  let set_up_to_date t = t.out_of_date <- false
 
   let resize_texture t ~width ~height =
-    let texture =
-      ok'
-      @@ Sdl.create_texture
-           t.renderer
-           Sdl.Pixel.format_rgb24
-           Sdl.Texture.access_streaming
-           ~w:width
-           ~h:height
+    let open Sdl_result_syntax in
+    let+ texture =
+      Sdl.create_texture
+        t.renderer
+        Sdl.Pixel.format_rgb24
+        Sdl.Texture.access_streaming
+        ~w:width
+        ~h:height
     in
     let old_texture = t.texture in
     t.texture <- texture;
     Sdl.destroy_texture old_texture
   ;;
 
-  let handle_event t e =
+  let handle_event mode =
+    let handle_mouse_motion =
+      match (mode : Mode.t) with
+      | Animate -> fun (_ : t) ~x:_ ~y:_ -> Lwt.return_unit
+      | Follow_mouse ->
+        fun t ~x ~y ->
+          let open Sdl_result_syntax in
+          let+ width, height = Sdl.get_renderer_output_size t.renderer in
+          let c' = Julia.pixel_to_complex ~width ~height x y in
+          if not Complex.Infix.(t.c = c')
+          then begin
+            t.c <- c';
+            t.out_of_date <- true
+          end
+    in
+    Staged.stage
+    @@ fun t e ->
     match (e : Event.t) with
     | Ignored -> Lwt.return_unit
     | Quit ->
       Lwt.wakeup t.stop_resolver ();
       Lwt.return_unit
-    | Mouse_motion { x; y } ->
-      let width, height = ok' @@ Sdl.get_renderer_output_size t.renderer in
-      t.c <- Julia.pixel_to_complex ~width ~height x y;
-      t.out_of_date <- true;
-      Lwt.return_unit
-    | Window_resize { width; height } ->
-      resize_texture t ~width ~height;
-      Lwt.return_unit
+    | Mouse_motion { x; y } -> handle_mouse_motion t ~x ~y
+    | Window_resize { width; height } -> resize_texture t ~width ~height
   ;;
 
   let create ~no_vsync () =
@@ -115,22 +144,27 @@ end = struct
     match Sdl.create_window ~w ~h "Animated Julia Fractal" flags with
     | Error (`Msg e) -> Or_error.error_s [%message "Create window" (e : string)]
     | Ok window ->
+      let or_error = function
+        | Ok _ as ok -> ok
+        | Error (`Msg e) -> Or_error.error_string e
+      in
+      let ( let* ) m f = Or_error.bind m ~f in
       let req_vulkan_exts = Sdl.Vulkan.get_instance_extensions window in
       Caml.Format.printf
         "vulkan extensions: @[%a@]\n"
         Fmt.(option (list ~sep:Fmt.sp string))
         req_vulkan_exts;
       Caml.Format.pp_print_flush Caml.Format.std_formatter ();
-      let renderer =
+      let* renderer =
         let flags =
           if no_vsync
           then Sdl.Renderer.accelerated
           else Sdl.Renderer.(presentvsync + accelerated)
         in
-        ok' @@ Sdl.create_renderer ~flags window
+        or_error @@ Sdl.create_renderer ~flags window
       in
-      let texture =
-        ok'
+      let* texture =
+        or_error
         @@ Sdl.create_texture
              renderer
              Sdl.Pixel.format_rgb24
@@ -177,7 +211,7 @@ let event_loop handler =
   loop ()
 ;;
 
-let render_loop s ~max_iter =
+let render_loop s ~max_iter ~mode =
   let stop = State.stopped s in
   let frame_counter = ref 0 in
   Lwt.async (fun () ->
@@ -209,6 +243,11 @@ let render_loop s ~max_iter =
   in
   let r = State.renderer s in
   let dt = 1 // 100 in
+  let next_c =
+    match (mode : Mode.t) with
+    | Animate -> fun (_ : State.t) ~total_time -> Age.New (make_c total_time)
+    | Follow_mouse -> fun s ~total_time:_ -> State.c s
+  in
   let rec loop ~total_time ~accum ~current_time =
     let new_time = now () in
     let frame_time =
@@ -227,29 +266,39 @@ let render_loop s ~max_iter =
       loop ~accum ~total_time
     in
     let t = State.texture s in
-    match Sdl.lock_texture t None Bigarray.Int8_unsigned with
-    | Ok (buf, pitch) ->
-      (* let c = State.c s in *)
-      let c = make_c total_time in
-      (* let* () = Lwt_preemptive.detach (fun () -> Julia.blit buf ~pitch ~c ~max_iter) () in *)
-      Julia.blit buf ~pitch ~c ~max_iter;
-      Sdl.unlock_texture t;
-      ok' @@ Sdl.set_render_target r None;
-      ok' @@ Sdl.set_render_draw_color r 0 0 0 0;
-      ok' @@ Sdl.render_clear r;
-      ok' @@ Sdl.render_copy r t;
-      Sdl.render_present r;
-      Int.incr frame_counter;
-      let* () = Lwt.pause () in
-      if Lwt.is_sleeping stop
-      then loop ~total_time ~current_time:new_time ~accum
-      else Lwt.return_unit
-    | Error (`Msg e) -> Lwt.fail_with @@ "lock_texture: " ^ e
+    let* () =
+      match next_c s ~total_time with
+      | Old _ -> Lwt.return_unit
+      | New c ->
+        begin
+          match Sdl.lock_texture t None Bigarray.Int8_unsigned with
+          | Ok (buf, pitch) ->
+            Julia.blit buf ~pitch ~c ~max_iter;
+            Sdl.unlock_texture t;
+            let ( let* ) m k =
+              match m with
+              | Ok x -> k x
+              | Error (`Msg msg) -> Lwt.fail_with msg
+            in
+            let* () = Sdl.set_render_target r None in
+            let* () = Sdl.set_render_draw_color r 0 0 0 0 in
+            let* () = Sdl.render_clear r in
+            let* () = Sdl.render_copy r t in
+            Sdl.render_present r;
+            Int.incr frame_counter;
+            Lwt.return_unit
+          | Error (`Msg e) -> Lwt.fail_with @@ "lock_texture: " ^ e
+        end
+    in
+    let* () = Lwt.pause () in
+    if Lwt.is_sleeping stop
+    then loop ~total_time ~current_time:new_time ~accum
+    else Lwt.return_unit
   in
   loop ~total_time:0.0 ~accum:0.0 ~current_time:(now ())
 ;;
 
-let main' ~max_iter ~no_vsync =
+let main' ~max_iter ~no_vsync ~mode =
   let inits = Sdl.Init.(video + events) in
   match Sdl.init inits with
   | Error (`Msg e) -> log_err " SDL init: %s" e
@@ -257,21 +306,20 @@ let main' ~max_iter ~no_vsync =
     (match State.create ~no_vsync () with
     | Error e -> Lwt.fail (Error.to_exn e)
     | Ok state ->
-      Lwt.async (fun () -> render_loop state ~max_iter);
+      Lwt.async (fun () -> render_loop state ~max_iter ~mode);
       Lwt.async (fun () ->
-          let+ () =
-            event_loop @@ fun e -> State.handle_event state (Event.of_sdl_event e)
-          in
+          let h = Staged.unstage @@ State.handle_event mode in
+          let+ () = event_loop @@ fun e -> h state (Event.of_sdl_event e) in
           State.destroy_sdl_resources state;
           Sdl.quit ());
       State.stopped state)
 ;;
 
-let main max_iter no_vsync =
+let main max_iter no_vsync mode =
   let backend = Lwt_engine.Ev_backend.kqueue in
   let engine = new Lwt_engine.libev ~backend () in
   Lwt_engine.set engine;
-  Lwt_main.run @@ main' ~max_iter ~no_vsync
+  Lwt_main.run @@ main' ~max_iter ~no_vsync ~mode
 ;;
 
 let cmd =
@@ -289,5 +337,5 @@ let cmd =
     let doc = "Disable vsync" in
     Arg.(value & flag & info [ "no-vsync" ] ~docs ~doc)
   in
-  Cmd.v info Term.(const main $ max_iter $ no_vsync)
+  Cmd.v info Term.(const main $ max_iter $ no_vsync $ Mode.term)
 ;;

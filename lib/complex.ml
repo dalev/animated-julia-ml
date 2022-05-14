@@ -37,4 +37,9 @@ module Infix = struct
     and im = (a * d) + (b * c) in
     { re; im }
   ;;
+
+  let ( = ) z w =
+    let open Float.O in
+    z.re = w.re && z.im = w.im
+  ;;
 end
