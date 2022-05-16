@@ -1,5 +1,5 @@
 module C = Complex
-open! Base
+open Base
 module Complex = C
 open Lwt.Syntax
 module Sdl = Tsdl.Sdl
@@ -316,8 +316,9 @@ let main' ~max_iter ~no_vsync ~mode =
 ;;
 
 let main max_iter no_vsync mode =
-  let backend = Lwt_engine.Ev_backend.kqueue in
-  let engine = new Lwt_engine.libev ~backend () in
+  (* let backend = Lwt_engine.Ev_backend.kqueue in *)
+  (* let engine = new Lwt_engine.libev ~backend () in *)
+  let engine = new Lwt_engine.libev () in
   Lwt_engine.set engine;
   Lwt_main.run @@ main' ~max_iter ~no_vsync ~mode
 ;;

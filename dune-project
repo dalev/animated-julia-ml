@@ -4,6 +4,8 @@
 
 (generate_opam_files true)
 
+(implicit_transitive_deps false)
+
 (source
  (github dalev/animated-julia-ml))
 
@@ -19,7 +21,20 @@
  (name animated_julia)
  (synopsis "A short synopsis")
  (description "A longer description")
- (depends ocaml dune)
+ (depends
+  ppx_sexp_message
+  ocaml
+  dune
+  base
+  cmdliner
+  ctypes
+  integers
+  fmt
+  lwt
+  time_now
+  tsdl
+  conf-sdl2
+  conf-libffi)
  (tags
   (topics "to describe" your project)))
 

@@ -1,5 +1,17 @@
 (library
  (name animated_julia)
- (libraries base cmdliner fmt lwt lwt.unix time_now tsdl unix)
+ (public_name animated_julia)
+ (libraries
+  base
+  base.caml
+  cmdliner
+  ctypes
+  integers
+  fmt
+  lwt
+  lwt.unix
+  time_now
+  tsdl
+  unix)
  (preprocess
   (pps ppx_sexp_message)))

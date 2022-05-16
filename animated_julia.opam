@@ -10,8 +10,19 @@ homepage: "https://github.com/dalev/animated-julia-ml"
 doc: "https://github.com/dalev/animated-julia-ml"
 bug-reports: "https://github.com/dalev/animated-julia-ml/issues"
 depends: [
+  "ppx_sexp_message"
   "ocaml"
   "dune" {>= "3.1"}
+  "base"
+  "cmdliner"
+  "ctypes"
+  "integers"
+  "fmt"
+  "lwt"
+  "time_now"
+  "tsdl"
+  "conf-sdl2"
+  "conf-libffi"
   "odoc" {with-doc}
 ]
 build: [

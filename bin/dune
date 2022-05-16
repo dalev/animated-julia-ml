@@ -1,4 +1,4 @@
 (executable
  (public_name animated_julia)
  (name main)
- (libraries animated_julia))
+ (libraries base base.caml ctypes integers cmdliner animated_julia))
