@@ -79,7 +79,6 @@ module State : sig
   val create : pool:Task.pool -> no_vsync:bool -> mode:Mode.t -> unit -> t Or_error.t
   val is_running : t -> bool
   val make_handler : t -> (Event.t -> unit) Staged.t
-  val stopped : t -> unit Promise.t
   val destroy : t -> unit
 
   val integrate : t -> dt:float -> unit
@@ -134,8 +133,6 @@ end = struct
       else 
         None
   ;;
-
-  let stopped t = t.stop
 
   let pixel_format = Sdl.Pixel.format_rgba8888
 
@@ -256,10 +253,11 @@ end = struct
   ;;
 end
 
-let event_loop stop handler =
+let event_loop state =
   let e = Sdl.Event.create () in
   Sdl.start_text_input ();
-  while not @@ Promise.is_resolved stop do
+  let handler = Staged.unstage @@ State.make_handler state in
+  while State.is_running state do
     if Sdl.poll_event (Some e)
     then 
       begin match Sdl.Event.(enum (get e typ)) with
@@ -305,7 +303,6 @@ let main' ~pool ~max_iter ~no_vsync ~mode ~clock =
     begin match State.create ~pool ~no_vsync ~mode () with
     | Error e -> Error.raise e
     | Ok state ->
-      let stop = State.stopped state in
       Switch.run (fun sw ->
         let fork_all = List.iter ~f:(Fiber.fork ~sw) in
         Switch.on_release sw (fun () -> State.destroy state; Sdl.quit ());
@@ -319,9 +316,7 @@ let main' ~pool ~max_iter ~no_vsync ~mode ~clock =
               Caml.Format.printf "frame rate: %s@." (Float.to_string_hum ~decimals:3 rate);
             done);
           (fun () -> render_loop state clock ~max_iter);
-          (fun () ->
-              let h = Staged.unstage @@ State.make_handler state in
-              event_loop stop h)
+          (fun () -> event_loop state)
         ])
     end
 ;;
