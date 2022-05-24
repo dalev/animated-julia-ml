@@ -6,12 +6,12 @@
   base.caml
   cmdliner
   ctypes
+  domainslib
+  eio
+  eio_main
   integers
   fmt
-  lwt
-  lwt.unix
-  time_now
   tsdl
   unix)
  (preprocess
-  (pps ppx_sexp_message)))
+  (pps ppx_base ppx_sexp_message)))
