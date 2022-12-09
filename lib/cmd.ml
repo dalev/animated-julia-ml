@@ -2,6 +2,7 @@ open Base
 open Eio.Std
 module Sdl = Tsdl.Sdl
 module Task = Domainslib.Task
+module FArray = Caml.Float.ArrayLabels
 
 module Complex = struct
   include Caml.Complex
@@ -93,32 +94,39 @@ end = struct
     ; mode : Mode.t
     ; mutable out_of_date : bool
     ; mutable texture : Sdl.texture
-    ; mutable revolutions : float List.t
+    ; mutable revolutions : FArray.t
     ; mutable mouse : Complex.t
     ; mutable frame_count : int
     }
 
   let is_running t = not @@ Promise.is_resolved t.stop
-  let turns_per_sec = [ 7.0; 13.0; 17.0 ]
+  let turns_per_sec = FArray.of_list [ 7.0; 13.0; 17.0 ]
 
   let radii =
     let base = 1.2
     and ratio = 2 // 3 in
-    List.mapi turns_per_sec ~f:(fun i _ -> base *. Float.int_pow ratio i)
+    FArray.mapi turns_per_sec ~f:(fun i _ -> base *. Float.int_pow ratio i)
   ;;
 
   let make_c revolutions =
-    List.fold2_exn radii revolutions ~init:Complex.zero ~f:(fun c radius turns ->
+    let sum = ref Complex.zero in
+    FArray.iter2 radii revolutions ~f:(fun radius turns ->
       let angle = 2.0 *. Float.pi *. turns in
-      Complex.(add c (polar radius angle)))
+      sum := Complex.(add !sum (polar radius angle)));
+    !sum
   ;;
 
   let integrate t ~dt =
+    let revs = t.revolutions in
     let f rev turn_per_sec =
       let rev = rev +. (dt /. turn_per_sec) in
       rev %. 1.0
     in
-    t.revolutions <- List.map2_exn t.revolutions turns_per_sec ~f
+    let ( .%{} ) = FArray.get in
+    let ( .%{}<- ) = FArray.set in
+    for i = 0 to FArray.length revs - 1 do
+      revs.%{i} <- f revs.%{i} turns_per_sec.%{i}
+    done
   ;;
 
   let c t =
@@ -206,7 +214,7 @@ end = struct
         ; stop_resolver
         ; texture
         ; mouse = Complex.zero
-        ; revolutions = List.init (List.length turns_per_sec) ~f:(fun _ -> 0.0)
+        ; revolutions = FArray.init (FArray.length turns_per_sec) ~f:(fun _ -> 0.0)
         ; out_of_date = true
         ; pool
         ; mode
@@ -257,7 +265,6 @@ let event_loop state =
       | `Drop_file -> Sdl.Event.drop_file_free e
       | _ ->
         let e = Event.of_sdl_event e in
-        (*  *Caml.Format.printf "Event: %s@." (Sexp.to_string_mach (Event.sexp_of_t e)); *)
         handler e
     end
     else Fiber.yield ()
@@ -288,16 +295,14 @@ let render_loop s clock ~max_iter =
 
 let frame_rate_loop state clock =
   let period = 3.0 in
-  Caml.Format.printf
-    "frame rate loop started: period = %s@."
-    (Float.to_string_hum ~decimals:3 period);
+  Fmt.pr "frame rate loop started: period = %s@." (Float.to_string_hum ~decimals:3 period);
   while State.is_running state do
     Eio.Time.sleep clock period;
     let count = State.reset_frame_count state in
     let rate = Float.of_int count /. period in
-    Caml.Format.printf "frame rate: %s@." (Float.to_string_hum ~decimals:3 rate)
+    Fmt.pr "frame rate: %s@." (Float.to_string_hum ~decimals:3 rate)
   done;
-  Caml.Format.printf "frame rate loop stopped@."
+  Fmt.pr "frame rate loop stopped@."
 ;;
 
 let main' ~pool ~max_iter ~no_vsync ~mode ~clock =

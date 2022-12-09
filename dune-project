@@ -20,20 +20,10 @@
  (synopsis "A short synopsis")
  (description "A longer description")
  (depends
-  ppx_sexp_message
   ocaml
-  dune
   base
   cmdliner
-  ctypes
-  integers
   fmt
-  lwt
-  time_now
-  tsdl
-  conf-sdl2
-  conf-libffi)
- (tags
-  (topics "to describe" your project)))
+  tsdl))
 
 ; See the complete stanza docs at https://dune.readthedocs.io/en/stable/dune-files.html#dune-project

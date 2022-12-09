@@ -3,15 +3,11 @@
  (public_name animated_julia)
  (libraries
   base
-  base.caml
   cmdliner
-  ctypes
   domainslib
   eio
   eio_main
-  integers
   fmt
-  tsdl
-  unix)
+  tsdl)
  (preprocess
   (pps ppx_base ppx_sexp_message)))
