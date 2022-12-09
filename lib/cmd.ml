@@ -5,9 +5,10 @@ module Task = Domainslib.Task
 
 module Complex = struct
   include Caml.Complex
-  let ( = ) z w = 
+
+  let ( = ) z w =
     let open Float.O in
-    z.re = w.re && z.im = w.im 
+    z.re = w.re && z.im = w.im
   ;;
 end
 
@@ -36,7 +37,7 @@ module Event = struct
         { width : int
         ; height : int
         }
-    [@@deriving sexp_of]
+  [@@deriving sexp_of]
 
   let of_sdl_event e =
     match Sdl.Event.(enum (get e typ)) with
@@ -44,15 +45,14 @@ module Event = struct
     | `Mouse_motion ->
       let x, y = Sdl.Event.(get e mouse_motion_x, get e mouse_motion_y) in
       Mouse_motion { x; y }
-    | `Window_event ->
-      begin
-        match Sdl.Event.(window_event_enum @@ get e window_event_id) with
-        | `Resized ->
-          let g f = Int.of_int32_exn @@ Sdl.Event.get e f in
-          let width, height = Sdl.Event.(g window_data1, g window_data2) in
-          Window_resize { width; height }
-        | _ -> Ignored
-      end
+    | `Window_event -> begin
+      match Sdl.Event.(window_event_enum @@ get e window_event_id) with
+      | `Resized ->
+        let g f = Int.of_int32_exn @@ Sdl.Event.get e f in
+        let width, height = Sdl.Event.(g window_data1, g window_data2) in
+        Window_resize { width; height }
+      | _ -> Ignored
+    end
     | _ -> Ignored
   ;;
 end
@@ -80,7 +80,6 @@ module State : sig
   val is_running : t -> bool
   val make_handler : t -> (Event.t -> unit) Staged.t
   val destroy : t -> unit
-
   val integrate : t -> dt:float -> unit
   val render : t -> f:(Complex.t -> pixels -> int -> Task.pool -> unit) -> unit
   val reset_frame_count : t -> int
@@ -100,11 +99,11 @@ end = struct
     }
 
   let is_running t = not @@ Promise.is_resolved t.stop
-
   let turns_per_sec = [ 7.0; 13.0; 17.0 ]
 
-  let radii = 
-    let base = 1.2 and ratio = 2 // 3 in
+  let radii =
+    let base = 1.2
+    and ratio = 2 // 3 in
     List.mapi turns_per_sec ~f:(fun i _ -> base *. Float.int_pow ratio i)
   ;;
 
@@ -112,26 +111,26 @@ end = struct
     List.fold2_exn radii revolutions ~init:Complex.zero ~f:(fun c radius turns ->
       let angle = 2.0 *. Float.pi *. turns in
       Complex.(add c (polar radius angle)))
-  ;; 
+  ;;
 
   let integrate t ~dt =
-    let f rev turn_per_sec = 
-      let rev = rev +. dt /. turn_per_sec in
+    let f rev turn_per_sec =
+      let rev = rev +. (dt /. turn_per_sec) in
       rev %. 1.0
     in
     t.revolutions <- List.map2_exn t.revolutions turns_per_sec ~f
+  ;;
 
-  let c t = 
+  let c t =
     match t.mode with
     | Animate -> Some (make_c t.revolutions)
-    | Follow_mouse -> 
+    | Follow_mouse ->
       if t.out_of_date
       then begin
         t.out_of_date <- false;
         Some t.mouse
       end
-      else 
-        None
+      else None
   ;;
 
   let pixel_format = Sdl.Pixel.format_rgba8888
@@ -170,8 +169,7 @@ end = struct
     @@ fun e ->
     match (e : Event.t) with
     | Ignored -> ()
-    | Quit ->
-      Promise.resolve t.stop_resolver ()
+    | Quit -> Promise.resolve t.stop_resolver ()
     | Mouse_motion { x; y } -> handle_mouse_motion ~x ~y
     | Window_resize { width; height } -> resize_texture t ~width ~height
   ;;
@@ -199,12 +197,7 @@ end = struct
       in
       let* texture =
         or_error
-        @@ Sdl.create_texture
-             renderer
-             pixel_format
-             Sdl.Texture.access_streaming
-             ~w
-             ~h
+        @@ Sdl.create_texture renderer pixel_format Sdl.Texture.access_streaming ~w ~h
       in
       Ok
         { window
@@ -215,7 +208,7 @@ end = struct
         ; mouse = Complex.zero
         ; revolutions = List.init (List.length turns_per_sec) ~f:(fun _ -> 0.0)
         ; out_of_date = true
-        ; pool 
+        ; pool
         ; mode
         ; frame_count = 0
         }
@@ -259,16 +252,15 @@ let event_loop state =
   let handler = Staged.unstage @@ State.make_handler state in
   while State.is_running state do
     if Sdl.poll_event (Some e)
-    then 
-      begin match Sdl.Event.(enum (get e typ)) with
+    then begin
+      match Sdl.Event.(enum (get e typ)) with
       | `Drop_file -> Sdl.Event.drop_file_free e
-      | _ -> 
+      | _ ->
         let e = Event.of_sdl_event e in
-        (* Caml.Format.printf "Event: %s@." (Sexp.to_string_mach (Event.sexp_of_t e)); *)
+        (*  *Caml.Format.printf "Event: %s@." (Sexp.to_string_mach (Event.sexp_of_t e)); *)
         handler e
-      end
-    else 
-      Fiber.yield ()
+    end
+    else Fiber.yield ()
   done
 ;;
 
@@ -288,45 +280,53 @@ let render_loop s clock ~max_iter =
       State.integrate s ~dt;
       accum := !accum -. dt
     done;
-    State.render s ~f:(fun c buf pitch pool ->
-      Julia.blit buf ~pool ~pitch ~c ~max_iter);
+    State.render s ~f:(fun c buf pitch pool -> Julia.blit buf ~pool ~pitch ~c ~max_iter);
     last_time := new_time;
-    Fiber.yield()
+    Fiber.yield ()
+  done
+;;
+
+let frame_rate_loop state clock =
+  let period = 3.0 in
+  Caml.Format.printf
+    "frame rate loop started: period = %s@."
+    (Float.to_string_hum ~decimals:3 period);
+  while State.is_running state do
+    Eio.Time.sleep clock period;
+    let count = State.reset_frame_count state in
+    let rate = Float.of_int count /. period in
+    Caml.Format.printf "frame rate: %s@." (Float.to_string_hum ~decimals:3 rate)
   done;
+  Caml.Format.printf "frame rate loop stopped@."
 ;;
 
 let main' ~pool ~max_iter ~no_vsync ~mode ~clock =
   let inits = Sdl.Init.(video + events) in
   match Sdl.init inits with
   | Error (`Msg e) -> log_err " SDL init: %s" e
-  | Ok () ->
-    begin match State.create ~pool ~no_vsync ~mode () with
+  | Ok () -> begin
+    match State.create ~pool ~no_vsync ~mode () with
     | Error e -> Error.raise e
     | Ok state ->
       Switch.run (fun sw ->
         let fork_all = List.iter ~f:(Fiber.fork ~sw) in
-        Switch.on_release sw (fun () -> State.destroy state; Sdl.quit ());
-        fork_all [
-          (fun () ->
-            let period = 3.0 in
-            while State.is_running state do
-              Eio.Time.sleep clock period;
-              let count = State.reset_frame_count state in
-              let rate = Float.of_int count /. period in
-              Caml.Format.printf "frame rate: %s@." (Float.to_string_hum ~decimals:3 rate);
-            done);
-          (fun () -> render_loop state clock ~max_iter);
-          (fun () -> event_loop state)
-        ])
-    end
+        Switch.on_release sw (fun () ->
+          State.destroy state;
+          Sdl.quit ());
+        fork_all
+          [ (fun () -> render_loop state clock ~max_iter)
+          ; (fun () -> frame_rate_loop state clock)
+          ; (fun () -> event_loop state)
+          ])
+  end
 ;;
 
 let main max_iter no_vsync mode =
-  let pool = 
-    let num_additional_domains = 7 in
-    Task.setup_pool ~name:"compute-pool" ~num_additional_domains ()
+  let pool =
+    let num_domains = Caml.Domain.recommended_domain_count () - 1 in
+    Task.setup_pool ~name:"compute-pool" ~num_domains ()
   in
-  Eio_main.run (fun env -> 
+  Eio_main.run (fun env ->
     let clock = Eio.Stdenv.clock env in
     main' ~pool ~max_iter ~no_vsync ~mode ~clock)
 ;;
