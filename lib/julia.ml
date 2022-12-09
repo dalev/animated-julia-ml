@@ -1,5 +1,5 @@
 open! Base
-module Complex = Caml.Complex
+module Complex = Float_complex
 module Task = Domainslib.Task
 
 module Rgba : sig
@@ -13,11 +13,8 @@ end = struct
 
   let make ~r ~g ~b =
     let a = 1.0 in
-    let rgba = 
-      to_byte r lsl 24
-      + to_byte g lsl 16
-      + to_byte b lsl  8
-      + to_byte a lsl  0
+    let rgba =
+      (to_byte r lsl 24) + (to_byte g lsl 16) + (to_byte b lsl 8) + (to_byte a lsl 0)
     in
     Int.to_int32_trunc rgba
   ;;
@@ -73,9 +70,9 @@ let pixel_to_complex ~width ~height x y =
   let q =
     let re = center x /. Float.of_int width in
     let im = center y /. Float.of_int height in
-    {Complex. re; im}
+    { Complex.re; im }
   in
-  Complex.(mul (sub q {re=0.5; im=0.5}) {re=4.0; im = 0.0})
+  Complex.(mul (sub q { re = 0.5; im = 0.5 }) { re = 4.0; im = 0.0 })
 ;;
 
 let blit buf ~pool ~pitch ~c ~max_iter =
@@ -85,7 +82,7 @@ let blit buf ~pool ~pitch ~c ~max_iter =
   let pixel_to_z x y = pixel_to_complex ~width:ncols ~height:nrows x y in
   Task.run pool (fun () ->
     Task.parallel_for pool ~start:0 ~finish ~body:(fun offset ->
-      let x = offset % ncols 
+      let x = offset % ncols
       and y = offset / ncols in
       let z = pixel_to_z x y in
       let rgba = color z c ~max_iter in

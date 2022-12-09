@@ -3,15 +3,7 @@ open Eio.Std
 module Sdl = Tsdl.Sdl
 module Task = Domainslib.Task
 module FArray = Caml.Float.ArrayLabels
-
-module Complex = struct
-  include Caml.Complex
-
-  let ( = ) z w =
-    let open Float.O in
-    z.re = w.re && z.im = w.im
-  ;;
-end
+module Complex = Float_complex
 
 module Sdl_result_syntax = struct
   let ( let+ ) m f =
