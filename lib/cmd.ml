@@ -92,9 +92,9 @@ end = struct
     ; stop_resolver : unit Promise.u
     ; pool : Task.pool
     ; mode : Mode.t
+    ; revolutions : FArray.t
     ; mutable out_of_date : bool
     ; mutable texture : Sdl.texture
-    ; mutable revolutions : FArray.t
     ; mutable mouse : Complex.t
     ; mutable frame_count : int
     }
