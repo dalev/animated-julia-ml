@@ -274,10 +274,7 @@ let render_loop s clock ~max_iter =
   let accum = fl_ref 0.0 in
   while State.is_running s do
     let new_time = now () in
-    let frame_time =
-      (* CR dalev: review this clamp *)
-      Float.clamp_exn (new_time -. last_time.fl_contents) ~min:dt ~max:(1 // 60)
-    in
+    let frame_time = Float.min (new_time -. last_time.fl_contents) 0.25 in
     accum.fl_contents <- accum.fl_contents +. frame_time;
     while Float.(accum.fl_contents >= dt) do
       State.integrate s ~dt;
