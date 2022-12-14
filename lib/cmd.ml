@@ -35,6 +35,9 @@ module Event = struct
   let of_sdl_event e =
     match Sdl.Event.(enum (get e typ)) with
     | `Quit -> Quit
+    | `Key_down ->
+      let code = Sdl.Event.(get e keyboard_keycode) in
+      if Sdl.K.q = code then Quit else Ignored
     | `Mouse_motion ->
       let x, y = Sdl.Event.(get e mouse_motion_x, get e mouse_motion_y) in
       Mouse_motion { x; y }
@@ -223,9 +226,6 @@ end = struct
         Sdl.unlock_texture tex;
         let r = t.renderer in
         let open Sdl_result_syntax in
-        let+ () = Sdl.set_render_target r None in
-        let+ () = Sdl.set_render_draw_color r 0 0 0 0 in
-        let+ () = Sdl.render_clear r in
         let+ () = Sdl.render_copy r tex in
         Sdl.render_present r;
         t.frame_count <- 1 + t.frame_count
@@ -285,16 +285,21 @@ let render_loop s clock ~max_iter =
   done
 ;;
 
-let frame_rate_loop state clock =
-  let period = 3.0 in
-  Fmt.pr "frame rate loop started: period = %s@." (Float.to_string_hum ~decimals:3 period);
-  while State.is_running state do
-    Eio.Time.sleep clock period;
-    let count = State.reset_frame_count state in
-    let rate = Float.of_int count /. period in
-    Fmt.pr "frame rate: %s@." (Float.to_string_hum ~decimals:3 rate)
-  done;
-  Fmt.pr "frame rate loop stopped@."
+let fork_frame_rate_loop ~sw state clock =
+  (* this is a daemon so that we don't have to wait [period] seconds for the program to exit *)
+  Fiber.fork_daemon ~sw (fun () ->
+    let period = 3.0 in
+    Fmt.pr
+      "frame rate loop started: period = %s@."
+      (Float.to_string_hum ~decimals:3 period);
+    while State.is_running state do
+      Eio.Time.sleep clock period;
+      let count = State.reset_frame_count state in
+      let rate = Float.of_int count /. period in
+      Fmt.pr "frame rate: %s@." (Float.to_string_hum ~decimals:3 rate)
+    done;
+    Fmt.pr "frame rate loop stopped@.";
+    `Stop_daemon)
 ;;
 
 let main' ~pool ~max_iter ~no_vsync ~mode ~clock =
@@ -310,11 +315,9 @@ let main' ~pool ~max_iter ~no_vsync ~mode ~clock =
         Switch.on_release sw (fun () ->
           State.destroy state;
           Sdl.quit ());
+        fork_frame_rate_loop ~sw state clock;
         fork_all
-          [ (fun () -> render_loop state clock ~max_iter)
-          ; (fun () -> frame_rate_loop state clock)
-          ; (fun () -> event_loop state)
-          ])
+          [ (fun () -> render_loop state clock ~max_iter); (fun () -> event_loop state) ])
   end
 ;;
 
