@@ -263,24 +263,28 @@ let event_loop state =
   done
 ;;
 
+type fl_ref = { mutable fl_contents : float }
+
+let fl_ref f = { fl_contents = f }
+
 let render_loop s clock ~max_iter =
   let now () = Eio.Time.now clock in
   let dt = 1 // 100 in
-  let last_time = ref @@ now () in
-  let accum = ref 0.0 in
+  let last_time = fl_ref @@ now () in
+  let accum = fl_ref 0.0 in
   while State.is_running s do
     let new_time = now () in
     let frame_time =
       (* CR dalev: review this clamp *)
-      Float.clamp_exn (new_time -. !last_time) ~min:dt ~max:(1 // 60)
+      Float.clamp_exn (new_time -. last_time.fl_contents) ~min:dt ~max:(1 // 60)
     in
-    accum := !accum +. frame_time;
-    while Float.(!accum >= dt) do
+    accum.fl_contents <- accum.fl_contents +. frame_time;
+    while Float.(accum.fl_contents >= dt) do
       State.integrate s ~dt;
-      accum := !accum -. dt
+      accum.fl_contents <- accum.fl_contents -. dt
     done;
     State.render s ~f:(fun c buf pitch pool -> Julia.blit buf ~pool ~pitch ~c ~max_iter);
-    last_time := new_time;
+    last_time.fl_contents <- new_time;
     Fiber.yield ()
   done
 ;;

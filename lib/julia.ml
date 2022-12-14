@@ -20,49 +20,34 @@ end = struct
   ;;
 end
 
-module Hsv = struct
-  type t =
-    { h : float
-    ; s : float
-    ; v : float
-    }
+let clamp_unit = Float.clamp_exn ~min:0.0 ~max:1.0
+let fractional f = f -. Float.round_down f
 
-  let make (hue : float) escaped =
+let color ?(max_iter = 64) z c =
+  let make_rgb hue i =
     let open Float.O in
     let h = 0.1 + (0.9 * hue) in
-    let v = if escaped then 0.0 else 1.0 in
-    { h; s = 1.0; v }
-  ;;
-
-  let clamp_unit = Float.clamp_exn ~min:0.0 ~max:1.0
-  let fractional f = f -. Float.round_down f
-
-  let to_rgb { h; s = _; v } =
-    let open Float.O in
+    let v = Float.of_int (min i 1) in
     let f a =
       let x = (6.0 * fractional (a + h)) - 3.0 in
       v * clamp_unit (Float.abs x - 1.0)
     in
     Rgba.make ~r:(f 1.0) ~g:(f @@ (2.0 /. 3.0)) ~b:(f @@ (1.0 /. 3.0))
-  ;;
-end
-
-let color ?(max_iter = 64) z c =
-  let make_rgb hue i = Hsv.to_rgb @@ Hsv.make hue (i >= max_iter) in
+  in
   let rec loop i z hue =
-    if i < max_iter
-    then begin
+    if i <= 0
+    then make_rgb hue i
+    else begin
       let q = Complex.norm2 z in
       if Float.O.(q > 4.0)
       then make_rgb hue i
       else (
         let z = Complex.(add c (mul z z)) in
         let hue = hue +. Float.exp (-.q) in
-        loop (i + 1) z hue)
+        loop (i - 1) z hue)
     end
-    else make_rgb hue i
   in
-  loop 0 z 0.0
+  loop max_iter z 0.0
 ;;
 
 let pixel_to_complex ~width ~height x y =
