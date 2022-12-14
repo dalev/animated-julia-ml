@@ -179,8 +179,8 @@ end = struct
 
   let create ~pool ~no_vsync ~mode () =
     let stop, stop_resolver = Promise.create () in
-    let w = 640
-    and h = 480 in
+    let w = 800
+    and h = 600 in
     let flags = Sdl.Window.(shown + mouse_focus + resizable) in
     match Sdl.create_window ~w ~h "Animated Julia Fractal" flags with
     | Error (`Msg e) -> Or_error.error_s [%message "Create window" (e : string)]
@@ -340,7 +340,7 @@ let cmd =
   let info = Cmd.info "animated_julia" ~doc ~sdocs ~man in
   let max_iter =
     let doc = "Max iterations to decide if point 'escapes' the Julia set" in
-    Arg.(value & opt int 32 & info [ "max-iter" ] ~docs ~doc ~docv:"INT")
+    Arg.(value & opt int 64 & info [ "max-iter" ] ~docs ~doc ~docv:"INT")
   in
   let no_vsync =
     let doc = "Disable vsync" in
