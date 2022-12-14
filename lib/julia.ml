@@ -21,15 +21,18 @@ let fractional f = f -. Float.round_down f
 
 let color ?(max_iter = 64) z c =
   let make_rgb hue i =
+    (* hsv -> rgb conversion from wikipedia *)
     let open Float.O in
     let h = 0.1 + (0.9 * hue) in
+    let s = 1.0 in
     let v = Float.of_int (min i 1) in
     let to_byte f = Float.to_int (f *. 255.0) in
-    let f a =
-      let x = (6.0 * fractional (a + h)) - 3.0 in
-      to_byte @@ (v * clamp_unit (Float.abs x - 1.0))
+    let f n =
+      let k = Float.mod_float (n + (6.0 * h)) 6.0 in
+      let x = v * (1.0 - (s * Float.max 0.0 (Float.min (Float.min k (4.0 - k)) 1.0))) in
+      to_byte x
     in
-    Rgba.make ~r:(f 1.0) ~g:(f @@ (2.0 /. 3.0)) ~b:(f @@ (1.0 /. 3.0))
+    Rgba.make ~r:(f 5.0) ~g:(f 3.0) ~b:(f 1.0)
   in
   let rec loop i z hue =
     if i <= 0
