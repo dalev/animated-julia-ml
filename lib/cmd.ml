@@ -263,47 +263,41 @@ let event_loop state =
   done
 ;;
 
-type fl_ref = { mutable fl_contents : float }
-
-let fl_ref f = { fl_contents = f }
-
 let render_loop s clock ~max_iter =
-  let now () = Eio.Time.now clock in
+  let now () = Eio.Time.Mono.now clock in
   let dt = 1 // 100 in
-  let last_time = fl_ref @@ now () in
-  let accum = fl_ref 0.0 in
+  let last_time = ref @@ now () in
+  let accum = ref 0.0 in
   while State.is_running s do
     let new_time = now () in
-    let frame_time = Float.min (new_time -. last_time.fl_contents) 0.25 in
-    accum.fl_contents <- accum.fl_contents +. frame_time;
-    while Float.(accum.fl_contents >= dt) do
+    let frame_time = Float.min (Mtime.span new_time !last_time |> Mtime.Span.to_s) 0.25 in
+    accum := !accum +. frame_time;
+    while Float.(!accum >= dt) do
       State.integrate s ~dt;
-      accum.fl_contents <- accum.fl_contents -. dt
+      accum := !accum -. dt
     done;
     State.render s ~f:(fun c buf pitch pool -> Julia.blit buf ~pool ~pitch ~c ~max_iter);
-    last_time.fl_contents <- new_time;
+    last_time := new_time;
     Fiber.yield ()
   done
 ;;
 
-let fork_frame_rate_loop ~sw state clock =
+let fork_frame_rate_loop ~sw state clock fmt =
   (* this is a daemon so that we don't have to wait [period] seconds for the program to exit *)
   Fiber.fork_daemon ~sw (fun () ->
-    let period = 3.0 in
-    Fmt.pr
-      "frame rate loop started: period = %s@."
-      (Float.to_string_hum ~decimals:3 period);
+    let period = Mtime.Span.(3 * s) in
+    Fmt.pf fmt "frame rate loop started: period = %a@." Mtime.Span.pp period;
     while State.is_running state do
-      Eio.Time.sleep clock period;
+      Eio.Time.Mono.sleep_span clock period;
       let count = State.reset_frame_count state in
-      let rate = Float.of_int count /. period in
-      Fmt.pr "frame rate: %s@." (Float.to_string_hum ~decimals:3 rate)
+      let rate = Float.of_int count /. Mtime.Span.to_s period in
+      Fmt.pf fmt "frame rate: %s@." (Float.to_string_hum ~decimals:3 rate)
     done;
-    Fmt.pr "frame rate loop stopped@.";
+    Fmt.pf fmt "frame rate loop stopped@.";
     `Stop_daemon)
 ;;
 
-let main' ~pool ~max_iter ~no_vsync ~mode ~clock =
+let main' ~pool ~max_iter ~no_vsync ~mode ~clock ~stdout =
   let inits = Sdl.Init.(video + events) in
   match Sdl.init inits with
   | Error (`Msg e) -> log_err " SDL init: %s" e
@@ -316,7 +310,14 @@ let main' ~pool ~max_iter ~no_vsync ~mode ~clock =
         Switch.on_release sw (fun () ->
           State.destroy state;
           Sdl.quit ());
-        fork_frame_rate_loop ~sw state clock;
+        let fmt =
+          let write s pos len =
+            let s = String.sub s ~pos ~len in
+            Eio.Flow.copy_string s stdout
+          and flush () = () in
+          Caml.Format.make_formatter write flush
+        in
+        fork_frame_rate_loop ~sw state clock fmt;
         fork_all
           [ (fun () -> render_loop state clock ~max_iter); (fun () -> event_loop state) ])
   end
@@ -328,8 +329,9 @@ let main max_iter no_vsync mode =
     Task.setup_pool ~name:"compute-pool" ~num_domains ()
   in
   Eio_main.run (fun env ->
-    let clock = Eio.Stdenv.clock env in
-    main' ~pool ~max_iter ~no_vsync ~mode ~clock)
+    let clock = Eio.Stdenv.mono_clock env in
+    let stdout = Eio.Stdenv.stdout env in
+    main' ~pool ~max_iter ~no_vsync ~mode ~clock ~stdout)
 ;;
 
 let cmd =
