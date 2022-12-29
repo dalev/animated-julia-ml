@@ -16,6 +16,8 @@ end = struct
   ;;
 end
 
+let clamp f = Float.clamp_exn f ~min:0.0 ~max:1.0
+
 let make_rgb hue i =
   (* hsv -> rgb conversion from wikipedia *)
   let open Float.O in
@@ -25,7 +27,7 @@ let make_rgb hue i =
   let to_byte f = Int32.of_float_unchecked (f *. 255.0) in
   let f n =
     let k = Float.mod_float (n + (6.0 * h)) 6.0 in
-    let x = v * (1.0 - (s * Float.max 0.0 (Float.min (Float.min k (4.0 - k)) 1.0))) in
+    let x = v * (1.0 - (s * clamp (Float.min k (4.0 - k)))) in
     to_byte x
   in
   Rgba.make ~r:(f 5.0) ~g:(f 3.0) ~b:(f 1.0)
