@@ -111,7 +111,7 @@ end = struct
     let sum = ref Complex.zero in
     FArray.iter2 radii revolutions ~f:(fun radius turns ->
       let angle = 2.0 *. Float.pi *. turns in
-      sum := Complex.(add !sum (polar radius angle)));
+      sum := Complex.(!sum + polar radius angle));
     !sum
   ;;
 
