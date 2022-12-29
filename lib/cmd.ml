@@ -95,12 +95,16 @@ end = struct
     }
 
   let is_running t = not @@ Promise.is_resolved t.stop
-  let turns_per_sec = FArray.of_list [ 7.0; 13.0; 17.0 ]
+
+  let turns_per_sec_inv =
+    let f x = 1.0 /. x in
+    FArray.of_list (List.map ~f [ 7.0; 13.0; 17.0 ])
+  ;;
 
   let radii =
     let base = 1.2
     and ratio = 2 // 3 in
-    FArray.mapi turns_per_sec ~f:(fun i _ -> base *. Float.int_pow ratio i)
+    FArray.mapi turns_per_sec_inv ~f:(fun i _ -> base *. Float.int_pow ratio i)
   ;;
 
   let make_c revolutions =
@@ -113,14 +117,14 @@ end = struct
 
   let integrate t ~dt =
     let revs = t.revolutions in
-    let f rev turn_per_sec =
-      let rev = rev +. (dt /. turn_per_sec) in
+    let f rev turn_per_sec_inv =
+      let rev = rev +. (dt *. turn_per_sec_inv) in
       rev %. 1.0
     in
     let ( .%{} ) = FArray.get in
     let ( .%{}<- ) = FArray.set in
     for i = 0 to FArray.length revs - 1 do
-      revs.%{i} <- f revs.%{i} turns_per_sec.%{i}
+      revs.%{i} <- f revs.%{i} turns_per_sec_inv.%{i}
     done
   ;;
 
@@ -209,7 +213,7 @@ end = struct
         ; stop_resolver
         ; texture
         ; mouse = Complex.zero
-        ; revolutions = FArray.init (FArray.length turns_per_sec) ~f:(fun _ -> 0.0)
+        ; revolutions = FArray.init (FArray.length turns_per_sec_inv) ~f:(fun _ -> 0.0)
         ; out_of_date = true
         ; pool
         ; mode
