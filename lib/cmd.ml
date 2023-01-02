@@ -226,10 +226,13 @@ end = struct
     Option.iter (c t) ~f:(fun c ->
       match Sdl.lock_texture tex None Bigarray.Int32 with
       | Ok (buf, pitch) ->
-        f c buf pitch t.pool;
-        Sdl.unlock_texture tex;
+        Exn.protect
+          ~f:(fun () -> f c buf pitch t.pool)
+          ~finally:(fun () -> Sdl.unlock_texture tex);
         let r = t.renderer in
         let open Sdl_result_syntax in
+        let+ () = Sdl.set_render_draw_color r 0 0 0 0 in
+        let+ () = Sdl.render_clear r in
         let+ () = Sdl.render_copy r tex in
         Sdl.render_present r;
         t.frame_count <- 1 + t.frame_count
