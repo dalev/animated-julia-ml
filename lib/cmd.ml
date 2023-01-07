@@ -283,7 +283,7 @@ let render_loop s clock ~max_iter =
       State.integrate s ~dt;
       accum := !accum -. dt
     done;
-    State.render s ~f:(fun c buf pitch pool -> Julia.blit buf ~pool ~pitch ~c ~max_iter);
+    State.render s ~f:(fun c buf width pool -> Julia.blit buf ~pool ~width ~c ~max_iter);
     last_time := new_time;
     Fiber.yield ()
   done

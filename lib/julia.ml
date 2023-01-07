@@ -57,15 +57,15 @@ let pixel_to_complex ~width ~height x y =
   Complex.(of_real 4.0 * (q - { re = 0.5; im = 0.5 }))
 ;;
 
-let blit buf ~pool ~pitch ~c ~max_iter =
+let blit buf ~pool ~width ~c ~max_iter =
   let finish = Bigarray.Array1.dim buf - 1 in
-  let nrows = Bigarray.Array1.dim buf / pitch in
-  let ncols = pitch in
-  let pixel_to_z x y = pixel_to_complex ~width:ncols ~height:nrows x y in
+  let height = Bigarray.Array1.dim buf / width in
+  let pixel_to_z x y = pixel_to_complex ~width ~height x y in
+  let chunk_size = width in
   Task.run pool (fun () ->
-    Task.parallel_for pool ~start:0 ~finish ~body:(fun offset ->
-      let x = offset % ncols
-      and y = offset / ncols in
+    Task.parallel_for pool ~chunk_size ~start:0 ~finish ~body:(fun offset ->
+      let x = offset % width
+      and y = offset / width in
       let z = pixel_to_z x y in
       let rgba = color z c ~max_iter in
       buf.{offset} <- rgba))
