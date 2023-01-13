@@ -255,7 +255,6 @@ end
 
 let event_loop state =
   let e = Sdl.Event.create () in
-  Sdl.start_text_input ();
   let handler = Staged.unstage @@ State.make_handler state in
   while State.is_running state do
     if Sdl.poll_event (Some e)
