@@ -30,14 +30,14 @@ let make_rgb hue i =
     let x = v * (1.0 - (s * clamp (Float.min k (4.0 - k)))) in
     to_byte x
   in
-  Rgba.make ~r:(f 5.0) ~g:(f 3.0) ~b:(f 1.0)
+  (Rgba.make [@inlined]) ~r:(f 5.0) ~g:(f 3.0) ~b:(f 1.0)
 ;;
 
 let color ?(max_iter = 64) z c =
   let rec loop i z hue =
     let q = Complex.norm2 z in
     if i <= 0 || Float.O.(q > 4.0)
-    then make_rgb hue i
+    then (make_rgb [@inlined]) hue i
     else begin
       let z = Complex.(c + (z * z))
       and hue = hue +. Float.exp (-.q) in

@@ -1,0 +1,32 @@
+open! Base
+open Core_bench
+module J = Animated_julia.Julia
+
+let max_iter = 64
+
+let blit_dimension ~pool ~c (width, height) =
+  let name = Printf.sprintf "(%d, %d)" width height in
+  let buf =
+    Caml.Bigarray.Array1.create Caml.Bigarray.int32 Caml.Bigarray.c_layout (width * height)
+  in
+  Bench.Test.create ~name (fun () ->
+    Sys.opaque_identity (J.blit buf ~pool ~width ~c ~max_iter))
+;;
+
+let () =
+  let c = Caml.Complex.{ re = 0.; im = 0. } in
+  let pool =
+    let num_domains = Caml.Domain.recommended_domain_count () - 1 in
+    Domainslib.Task.setup_pool ~name:"compute-pool" ~num_domains ()
+  in
+  Command_unix.run
+  @@ Bench.make_command
+       [ Bench.Test.create_group
+           ~name:"Julia.blit"
+           (let small = 320, 240 in
+            let scale n (w, h) = w * n, h * n in
+            List.map
+              ~f:(blit_dimension ~pool ~c)
+              (List.init 3 ~f:(fun i -> scale (i + 1) small)))
+       ]
+;;
