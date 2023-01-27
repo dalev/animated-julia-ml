@@ -24,9 +24,8 @@ let () =
        [ Bench.Test.create_group
            ~name:"Julia.blit"
            (let small = 320, 240 in
-            let scale n (w, h) = w * n, h * n in
-            List.map
-              ~f:(blit_dimension ~pool ~c)
-              (List.init 3 ~f:(fun i -> scale (i + 1) small)))
+            let medium = 800, 600 in
+            let large = 1280, 1024 in
+            List.map ~f:(blit_dimension ~pool ~c) [ small; medium; large ])
        ]
 ;;
