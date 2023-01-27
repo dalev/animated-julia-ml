@@ -1,13 +1,6 @@
 (library
  (name animated_julia)
  (public_name animated_julia)
- (libraries
-  base
-  cmdliner
-  domainslib
-  eio
-  eio_main
-  fmt
-  tsdl)
+ (libraries base base_bigstring cmdliner domainslib eio eio_main fmt tsdl)
  (preprocess
   (pps ppx_base ppx_sexp_message)))

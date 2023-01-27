@@ -4,6 +4,7 @@ module Sdl = Tsdl.Sdl
 module Task = Domainslib.Task
 module FArray = Caml.Float.ArrayLabels
 module Complex = Float_complex
+module Bigstring = Base_bigstring
 
 module Sdl_result_syntax = struct
   let ( let+ ) m f =
@@ -67,7 +68,7 @@ module Mode = struct
   ;;
 end
 
-type pixels = (int32, Bigarray.int32_elt) Sdl.bigarray
+type pixels = Bigstring.t
 
 module State : sig
   type t
@@ -224,10 +225,10 @@ end = struct
   let render t ~f =
     let tex = t.texture in
     Option.iter (c t) ~f:(fun c ->
-      match Sdl.lock_texture tex None Bigarray.Int32 with
+      match Sdl.lock_texture tex None Bigarray.Char with
       | Ok (buf, pitch) ->
         Exn.protect
-          ~f:(fun () -> f c buf pitch t.pool)
+          ~f:(fun () -> f c buf (pitch / 4) t.pool)
           ~finally:(fun () -> Sdl.unlock_texture tex);
         let r = t.renderer in
         let open Sdl_result_syntax in

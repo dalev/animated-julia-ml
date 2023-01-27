@@ -3,7 +3,7 @@ open! Base
 val pixel_to_complex : width:int -> height:int -> int -> int -> Float_complex.t
 
 val blit
-  :  (int32, Bigarray.int32_elt, Bigarray.c_layout) Bigarray.Array1.t
+  :  Base_bigstring.t
   -> pool:Domainslib.Task.pool
   -> width:int
   -> c:Float_complex.t

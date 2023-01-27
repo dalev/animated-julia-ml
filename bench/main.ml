@@ -7,7 +7,10 @@ let max_iter = 64
 let blit_dimension ~pool ~c (width, height) =
   let name = Printf.sprintf "(%d, %d)" width height in
   let buf =
-    Caml.Bigarray.Array1.create Caml.Bigarray.int32 Caml.Bigarray.c_layout (width * height)
+    Caml.Bigarray.Array1.create
+      Caml.Bigarray.char
+      Caml.Bigarray.c_layout
+      (width * height * 4)
   in
   Bench.Test.create ~name (fun () ->
     Sys.opaque_identity (J.blit buf ~pool ~width ~c ~max_iter))
