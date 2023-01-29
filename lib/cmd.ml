@@ -35,14 +35,27 @@ module Event = struct
     | `Mouse_motion ->
       let x, y = Sdl.Event.(get e mouse_motion_x, get e mouse_motion_y) in
       Mouse_motion { x; y }
+    | `Render_device_reset ->
+      Fmt.epr "event: Render_device_reset@.";
+      Ignored
     | `Window_event -> begin
       match Sdl.Event.(window_event_enum @@ get e window_event_id) with
-      | `Resized ->
+      | `Size_changed ->
         let g f = Int.of_int32_exn @@ Sdl.Event.get e f in
         let width, height = Sdl.Event.(g window_data1, g window_data2) in
+        Fmt.epr "window resize: %d, %d@." width height;
         Window_resize { width; height }
+      | `Maximized ->
+        Fmt.epr "window maximized@.";
+        Ignored
+      | `Unknown id ->
+        Fmt.epr "window event unknown: %d@." id;
+        Ignored
       | _ -> Ignored
     end
+    | `Unknown id ->
+      Fmt.epr "event type unknown: %d@." id;
+      Ignored
     | _ -> Ignored
   ;;
 end
@@ -66,7 +79,7 @@ type pixels = Bigstring.t
 module State : sig
   type t
 
-  val create : pool:Task.pool -> no_vsync:bool -> mode:Mode.t -> unit -> t Or_error.t
+  val create_exn : pool:Task.pool -> no_vsync:bool -> mode:Mode.t -> unit -> t
   val is_running : t -> bool
   val make_handler : t -> (Event.t -> unit) Staged.t
   val destroy : t -> unit
@@ -173,44 +186,35 @@ end = struct
     | Window_resize { width; height } -> resize_texture t ~width ~height
   ;;
 
-  let create ~pool ~no_vsync ~mode () =
+  let create_exn ~pool ~no_vsync ~mode () =
     let stop, stop_resolver = Promise.create () in
     let w = 800
     and h = 600 in
-    let flags = Sdl.Window.(shown + mouse_focus + resizable) in
-    match Sdl.create_window ~w ~h "Animated Julia Fractal" flags with
-    | Error (`Msg e) -> Or_error.error_s [%message "Create window" (e : string)]
-    | Ok window ->
-      let or_error = function
-        | Ok _ as ok -> ok
-        | Error (`Msg e) -> Or_error.error_string e
+    let flags = Sdl.Window.(shown + mouse_focus + resizable + allow_highdpi) in
+    let+ window = Sdl.create_window ~w ~h "Animated Julia Fractal" flags in
+    let+ renderer =
+      let flags =
+        if no_vsync
+        then Sdl.Renderer.accelerated
+        else Sdl.Renderer.(presentvsync + accelerated)
       in
-      let ( let* ) m f = Or_error.bind m ~f in
-      let* renderer =
-        let flags =
-          if no_vsync
-          then Sdl.Renderer.accelerated
-          else Sdl.Renderer.(presentvsync + accelerated)
-        in
-        or_error @@ Sdl.create_renderer ~flags window
-      in
-      let* texture =
-        or_error
-        @@ Sdl.create_texture renderer pixel_format Sdl.Texture.access_streaming ~w ~h
-      in
-      Ok
-        { window
-        ; renderer
-        ; stop
-        ; stop_resolver
-        ; texture
-        ; mouse = Complex.zero
-        ; revolutions = FArray.init (FArray.length turns_per_sec_inv) ~f:(fun _ -> 0.0)
-        ; out_of_date = true
-        ; pool
-        ; mode
-        ; frame_count = 0
-        }
+      Sdl.create_renderer ~flags window
+    in
+    let+ texture =
+      Sdl.create_texture renderer pixel_format Sdl.Texture.access_streaming ~w ~h
+    in
+    { window
+    ; renderer
+    ; stop
+    ; stop_resolver
+    ; texture
+    ; mouse = Complex.zero
+    ; revolutions = FArray.init (FArray.length turns_per_sec_inv) ~f:(fun _ -> 0.0)
+    ; out_of_date = true
+    ; pool
+    ; mode
+    ; frame_count = 0
+    }
   ;;
 
   let render t ~f =
@@ -294,7 +298,7 @@ let fork_frame_rate_loop ~sw state clock fmt =
 
 let main' ~pool ~max_iter ~no_vsync ~mode ~clock ~stdout =
   let+ () = Sdl.init Sdl.Init.(video + events) in
-  let state = Or_error.ok_exn @@ State.create ~pool ~no_vsync ~mode () in
+  let state = State.create_exn ~pool ~no_vsync ~mode () in
   Switch.run (fun sw ->
     let fork_all = List.iter ~f:(Fiber.fork ~sw) in
     Switch.on_release sw (fun () ->
