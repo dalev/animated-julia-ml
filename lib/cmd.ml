@@ -6,17 +6,10 @@ module FArray = Caml.Float.ArrayLabels
 module Complex = Float_complex
 module Bigstring = Base_bigstring
 
-module Sdl_result_syntax = struct
-  let ( let+ ) m f =
-    match m with
-    | Ok x -> f x
-    | Error (`Msg msg) -> failwith msg
-  ;;
-end
-
-let log_err fmt =
-  let open Caml in
-  Format.eprintf (fmt ^^ "@.")
+let ( let+ ) m f =
+  match m with
+  | Ok x -> f x
+  | Error (`Msg msg) -> Fmt.failwith "SDL failure: %s" msg
 ;;
 
 module Event = struct
@@ -144,7 +137,6 @@ end = struct
   let pixel_format = Sdl.Pixel.format_rgba8888
 
   let resize_texture t ~width ~height =
-    let open Sdl_result_syntax in
     let+ texture =
       Sdl.create_texture
         t.renderer
@@ -164,7 +156,6 @@ end = struct
       | Animate -> fun ~x:_ ~y:_ -> ()
       | Follow_mouse ->
         fun ~x ~y ->
-          let open Sdl_result_syntax in
           let+ width, height = Sdl.get_renderer_output_size t.renderer in
           let c' = Julia.pixel_to_complex ~width ~height x y in
           if not Complex.(t.mouse = c')
@@ -225,19 +216,16 @@ end = struct
   let render t ~f =
     let tex = t.texture in
     Option.iter (c t) ~f:(fun c ->
-      match Sdl.lock_texture tex None Bigarray.Char with
-      | Ok (buf, pitch) ->
-        Exn.protect
-          ~f:(fun () -> f c buf (pitch / 4) t.pool)
-          ~finally:(fun () -> Sdl.unlock_texture tex);
-        let r = t.renderer in
-        let open Sdl_result_syntax in
-        let+ () = Sdl.set_render_draw_color r 0 0 0 0 in
-        let+ () = Sdl.render_clear r in
-        let+ () = Sdl.render_copy r tex in
-        Sdl.render_present r;
-        t.frame_count <- 1 + t.frame_count
-      | Error (`Msg e) -> failwith @@ "lock_texture: " ^ e)
+      let+ buf, pitch = Sdl.lock_texture tex None Bigarray.Char in
+      Exn.protect
+        ~f:(fun () -> f c buf (pitch / 4) t.pool)
+        ~finally:(fun () -> Sdl.unlock_texture tex);
+      let r = t.renderer in
+      let+ () = Sdl.set_render_draw_color r 0 0 0 0 in
+      let+ () = Sdl.render_clear r in
+      let+ () = Sdl.render_copy r tex in
+      Sdl.render_present r;
+      t.frame_count <- 1 + t.frame_count)
   ;;
 
   let reset_frame_count t =
@@ -305,29 +293,23 @@ let fork_frame_rate_loop ~sw state clock fmt =
 ;;
 
 let main' ~pool ~max_iter ~no_vsync ~mode ~clock ~stdout =
-  let inits = Sdl.Init.(video + events) in
-  match Sdl.init inits with
-  | Error (`Msg e) -> log_err " SDL init: %s" e
-  | Ok () -> begin
-    match State.create ~pool ~no_vsync ~mode () with
-    | Error e -> Error.raise e
-    | Ok state ->
-      Switch.run (fun sw ->
-        let fork_all = List.iter ~f:(Fiber.fork ~sw) in
-        Switch.on_release sw (fun () ->
-          State.destroy state;
-          Sdl.quit ());
-        let fmt =
-          let write s pos len =
-            let s = String.sub s ~pos ~len in
-            Eio.Flow.copy_string s stdout
-          and flush () = () in
-          Caml.Format.make_formatter write flush
-        in
-        fork_frame_rate_loop ~sw state clock fmt;
-        fork_all
-          [ (fun () -> render_loop state clock ~max_iter); (fun () -> event_loop state) ])
-  end
+  let+ () = Sdl.init Sdl.Init.(video + events) in
+  let state = Or_error.ok_exn @@ State.create ~pool ~no_vsync ~mode () in
+  Switch.run (fun sw ->
+    let fork_all = List.iter ~f:(Fiber.fork ~sw) in
+    Switch.on_release sw (fun () ->
+      State.destroy state;
+      Sdl.quit ());
+    let fmt =
+      let write s pos len =
+        let s = String.sub s ~pos ~len in
+        Eio.Flow.copy_string s stdout
+      and flush () = () in
+      Caml.Format.make_formatter write flush
+    in
+    fork_frame_rate_loop ~sw state clock fmt;
+    fork_all
+      [ (fun () -> render_loop state clock ~max_iter); (fun () -> event_loop state) ])
 ;;
 
 let main max_iter no_vsync mode =
