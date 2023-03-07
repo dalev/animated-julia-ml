@@ -51,8 +51,8 @@ let color ?(max_iter = 64) zr zi c =
 ;;
 
 let pixel_to_complex ~width ~height x y =
-  let rwidth = 1.0 /. Float.of_int width in
-  let rheight = 1.0 /. Float.of_int height in
+  let rwidth = 1 // width in
+  let rheight = 1 // height in
   let center i rlimit = 4.0 *. (((0.5 +. Float.of_int i) *. rlimit) -. 0.5) in
   let re = center x rwidth in
   let im = center y rheight in
