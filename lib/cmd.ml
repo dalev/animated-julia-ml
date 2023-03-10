@@ -262,6 +262,8 @@ let event_loop state =
   done
 ;;
 
+let span_to_s span = Mtime.Span.to_float_ns span *. 1e-9
+
 let render_loop s clock ~max_iter =
   let now () = Eio.Time.Mono.now clock in
   let dt = 1 // 100 in
@@ -269,7 +271,7 @@ let render_loop s clock ~max_iter =
   let accum = ref 0.0 in
   while State.is_running s do
     let new_time = now () in
-    let frame_time = Float.min (Mtime.span new_time !last_time |> Mtime.Span.to_s) 0.25 in
+    let frame_time = Float.min (Mtime.span new_time !last_time |> span_to_s) 0.25 in
     accum := !accum +. frame_time;
     while Float.(!accum >= dt) do
       State.integrate s ~dt;
@@ -289,7 +291,7 @@ let fork_frame_rate_loop ~sw state clock fmt =
     while State.is_running state do
       Eio.Time.Mono.sleep_span clock period;
       let count = State.reset_frame_count state in
-      let rate = Float.of_int count /. Mtime.Span.to_s period in
+      let rate = Float.of_int count /. span_to_s period in
       Fmt.pf fmt "frame rate: %s@." (Float.to_string_hum ~decimals:3 rate)
     done;
     Fmt.pf fmt "frame rate loop stopped@.";
