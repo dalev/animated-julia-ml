@@ -75,8 +75,9 @@ let blit buf ~pool ~width ~c ~max_iter =
   Task.run pool (fun () ->
     Task.parallel_for pool ~chunk_size ~start:0 ~finish ~body:(fun offset ->
       let x = offset % width
-      and y = offset / width in
+      and y = offset / width
+      and pos = 4 * offset in
       let { Complex.re = zr; im = zi } = pixel_to_z x y in
       let rgba = color zr zi c ~max_iter in
-      Bigstring.unsafe_set_uint32_le buf ~pos:(4 * offset) rgba))
+      Bigstring.unsafe_set_uint32_le buf ~pos rgba))
 ;;
