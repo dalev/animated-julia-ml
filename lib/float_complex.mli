@@ -1,5 +1,5 @@
 open! Base
-include module type of Caml.Complex
+include module type of Stdlib.Complex
 
 val of_real : float -> t
 

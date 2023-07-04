@@ -2,7 +2,7 @@ open Base
 open Eio.Std
 module Sdl = Tsdl.Sdl
 module Task = Domainslib.Task
-module FArray = Caml.Float.ArrayLabels
+module FArray = Stdlib.Float.ArrayLabels
 module Complex = Float_complex
 module Bigstring = Base_bigstring
 
@@ -292,7 +292,8 @@ let fork_frame_rate_loop ~sw state clock fmt =
       Eio.Time.Mono.sleep_span clock period;
       let count = State.reset_frame_count state in
       let rate = Float.of_int count /. span_to_s period in
-      Fmt.pf fmt "frame rate: %s@." (Float.to_string_hum ~decimals:3 rate)
+      Fmt.pf fmt "frame rate: %s@." (Float.to_string_hum ~decimals:3 rate);
+      Fmt.flush fmt ()
     done;
     Fmt.pf fmt "frame rate loop stopped@.";
     `Stop_daemon)
@@ -311,7 +312,7 @@ let main' ~pool ~max_iter ~no_vsync ~mode ~clock ~stdout =
         let s = String.sub s ~pos ~len in
         Eio.Flow.copy_string s stdout
       and flush () = () in
-      Caml.Format.make_formatter write flush
+      Stdlib.Format.make_formatter write flush
     in
     fork_frame_rate_loop ~sw state clock fmt;
     fork_all
@@ -320,7 +321,7 @@ let main' ~pool ~max_iter ~no_vsync ~mode ~clock ~stdout =
 
 let main max_iter no_vsync mode =
   let pool =
-    let num_domains = Caml.Domain.recommended_domain_count () - 1 in
+    let num_domains = Stdlib.Domain.recommended_domain_count () - 1 in
     Task.setup_pool ~name:"compute-pool" ~num_domains ()
   in
   Eio_main.run (fun env ->

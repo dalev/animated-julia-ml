@@ -7,9 +7,9 @@ let max_iter = 64
 let blit_dimension ~pool ~c (width, height) =
   let name = Printf.sprintf "(%d, %d)" width height in
   let buf =
-    Caml.Bigarray.Array1.create
-      Caml.Bigarray.char
-      Caml.Bigarray.c_layout
+    Stdlib.Bigarray.Array1.create
+      Stdlib.Bigarray.char
+      Stdlib.Bigarray.c_layout
       (width * height * 4)
   in
   Bench.Test.create ~name (fun () ->
@@ -17,9 +17,9 @@ let blit_dimension ~pool ~c (width, height) =
 ;;
 
 let () =
-  let c = Caml.Complex.{ re = 0.; im = 0. } in
+  let c = Stdlib.Complex.{ re = 0.; im = 0. } in
   let pool =
-    let num_domains = Caml.Domain.recommended_domain_count () - 1 in
+    let num_domains = Stdlib.Domain.recommended_domain_count () - 1 in
     Domainslib.Task.setup_pool ~name:"compute-pool" ~num_domains ()
   in
   Command_unix.run
