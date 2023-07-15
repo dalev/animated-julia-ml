@@ -283,40 +283,40 @@ let render_loop s clock ~max_iter =
   done
 ;;
 
-let fork_frame_rate_loop ~sw state clock fmt =
+let fork_frame_rate_loop ~sw state clock stdout =
   (* this is a daemon so that we don't have to wait [period] seconds for the program to exit *)
   Fiber.fork_daemon ~sw (fun () ->
     let period = Mtime.Span.(3 * s) in
-    Fmt.pf fmt "frame rate loop started: period = %a@." Mtime.Span.pp period;
+    Eio.Flow.copy_string
+      (Printf.sprintf
+         "frame rate loop started: period = %s\n"
+         (Fmt.to_to_string Mtime.Span.pp period))
+      stdout;
+    Eio.Flow.copy_string "Why does this not work!?\n" stdout;
     while State.is_running state do
+      Eio.Flow.copy_string "fudge\n" stdout;
       Eio.Time.Mono.sleep_span clock period;
       let count = State.reset_frame_count state in
       let rate = Float.of_int count /. span_to_s period in
-      Fmt.pf fmt "frame rate: %s@." (Float.to_string_hum ~decimals:3 rate);
-      Fmt.flush fmt ()
+      Eio.Flow.copy_string
+        ("frame rate: " ^ Float.to_string_hum ~decimals:3 rate ^ "\n")
+        stdout
     done;
-    Fmt.pf fmt "frame rate loop stopped@.";
+    Eio.Flow.copy_string "frame rate loop stopped\n" stdout;
     `Stop_daemon)
 ;;
 
 let main' ~pool ~max_iter ~no_vsync ~mode ~clock ~stdout =
   let+ () = Sdl.init Sdl.Init.(video + events) in
   let state = State.create_exn ~pool ~no_vsync ~mode () in
+  Eio.Flow.copy_string "fibers starting\n" stdout;
   Switch.run (fun sw ->
-    let fork_all = List.iter ~f:(Fiber.fork ~sw) in
     Switch.on_release sw (fun () ->
       State.destroy state;
       Sdl.quit ());
-    let fmt =
-      let write s pos len =
-        let s = String.sub s ~pos ~len in
-        Eio.Flow.copy_string s stdout
-      and flush () = () in
-      Stdlib.Format.make_formatter write flush
-    in
-    fork_frame_rate_loop ~sw state clock fmt;
-    fork_all
-      [ (fun () -> render_loop state clock ~max_iter); (fun () -> event_loop state) ])
+    fork_frame_rate_loop ~sw state clock stdout;
+    Fiber.fork ~sw (fun () -> render_loop state clock ~max_iter);
+    Fiber.fork ~sw (fun () -> event_loop state))
 ;;
 
 let main max_iter no_vsync mode =
