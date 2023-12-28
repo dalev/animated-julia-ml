@@ -50,7 +50,7 @@ let render_loop s mono_clock ~max_iter =
   done
 ;;
 
-let print writer fmt = Fmt.kstr (fun str -> Write.string writer str) fmt
+let print f fmt = Fmt.pf f fmt
 
 let frame_rate_loop state mono_clock writer =
   let period = Mtime.Span.(3 * s) in
@@ -93,8 +93,13 @@ let main max_iter no_vsync mode =
   Eio_main.run (fun env ->
     let mono_clock = Eio.Stdenv.mono_clock env in
     Write.with_flow (Eio.Stdenv.stderr env) (fun writer ->
-      print writer "#domains = %d@." num_domains;
-      main' ~pool ~max_iter ~no_vsync ~mode ~mono_clock ~writer))
+      let f =
+        let out buf off len = Write.string writer buf ~off ~len in
+        let flush () = () in
+        Stdlib.Format.make_formatter out flush
+      in
+      print f "#domains = %d@." num_domains;
+      main' ~pool ~max_iter ~no_vsync ~mode ~mono_clock ~writer:f))
 ;;
 
 let cmd =
