@@ -13,8 +13,6 @@ let ( let+ ) m f =
   | Error (`Msg msg) -> Fmt.failwith "SDL failure: %s" msg
 ;;
 
-type pixels = Bigstring.t
-
 let event_loop state =
   let e = Sdl.Event.create () in
   let handler = Staged.unstage @@ State.make_handler state in

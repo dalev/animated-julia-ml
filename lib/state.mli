@@ -9,12 +9,7 @@ val create_exn : pool:Domainslib.Task.pool -> no_vsync:bool -> mode:Mode.t -> un
 
 val render
   :  t
-  -> f:
-       (Float_complex.t
-        -> (char, Bigarray.int8_unsigned_elt) Tsdl.Sdl.bigarray
-        -> int
-        -> Domainslib.Task.pool
-        -> 'a)
+  -> f:(Float_complex.t -> Base_bigstring.t -> int -> Domainslib.Task.pool -> 'a)
   -> unit
 
 val reset_frame_count : t -> int
