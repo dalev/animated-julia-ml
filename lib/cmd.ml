@@ -45,8 +45,7 @@ let render_loop s mono_clock ~max_iter =
       accum := !accum -. dt
     done;
     State.render s ~f:(fun c buf width pool -> Julia.blit buf ~pool ~width ~c ~max_iter);
-    last_time := new_time;
-    Fiber.yield ()
+    last_time := new_time
   done
 ;;
 
@@ -92,9 +91,9 @@ let main max_iter no_vsync mode =
   let pool = Task.setup_pool ~name:"compute-pool" ~num_domains () in
   Eio_main.run (fun env ->
     let mono_clock = Eio.Stdenv.mono_clock env in
-    Write.with_flow (Eio.Stdenv.stderr env) (fun writer ->
+    Write.with_flow (Eio.Stdenv.stdout env) (fun w ->
       let f =
-        let out buf off len = Write.string writer buf ~off ~len in
+        let out buf off len = Write.string w buf ~off ~len in
         let flush () = () in
         Stdlib.Format.make_formatter out flush
       in
