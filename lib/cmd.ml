@@ -5,6 +5,7 @@ module Task = Domainslib.Task
 module FArray = Stdlib.Float.ArrayLabels
 module Complex = Float_complex
 module Bigstring = Base_bigstring
+module Write = Eio.Buf_write
 
 let ( let+ ) m f =
   match m with
@@ -264,8 +265,8 @@ let event_loop state =
 
 let span_to_s span = Mtime.Span.to_float_ns span *. 1e-9
 
-let render_loop s clock ~max_iter =
-  let now () = Eio.Time.Mono.now clock in
+let render_loop s mono_clock ~max_iter =
+  let now () = Eio.Time.Mono.now mono_clock in
   let dt = 1 // 100 in
   let last_time = ref @@ now () in
   let accum = ref 0.0 in
@@ -283,51 +284,51 @@ let render_loop s clock ~max_iter =
   done
 ;;
 
-let fork_frame_rate_loop ~sw state clock stdout =
-  (* this is a daemon so that we don't have to wait [period] seconds for the program to exit *)
-  Fiber.fork_daemon ~sw (fun () ->
-    let period = Mtime.Span.(3 * s) in
-    Eio.Flow.copy_string
-      (Printf.sprintf
-         "frame rate loop started: period = %s\n"
-         (Fmt.to_to_string Mtime.Span.pp period))
-      stdout;
-    Eio.Flow.copy_string "Why does this not work!?\n" stdout;
-    while State.is_running state do
-      Eio.Flow.copy_string "fudge\n" stdout;
-      Eio.Time.Mono.sleep_span clock period;
-      let count = State.reset_frame_count state in
-      let rate = Float.of_int count /. span_to_s period in
-      Eio.Flow.copy_string
-        ("frame rate: " ^ Float.to_string_hum ~decimals:3 rate ^ "\n")
-        stdout
-    done;
-    Eio.Flow.copy_string "frame rate loop stopped\n" stdout;
-    `Stop_daemon)
+let print writer fmt = Fmt.kstr (fun str -> Write.string writer str) fmt
+
+let frame_rate_loop state mono_clock writer =
+  let period = Mtime.Span.(3 * s) in
+  let now () = Eio.Time.Mono.now mono_clock in
+  let print fmt = print writer fmt in
+  print "frame rate loop started: period = %a@." Mtime.Span.pp period;
+  let last_time = ref (now ()) in
+  while State.is_running state do
+    Eio.Time.Mono.sleep_span mono_clock period;
+    let this_time = now () in
+    let elapsed = Mtime.span this_time !last_time in
+    let count = State.reset_frame_count state in
+    let rate = Float.of_int count /. span_to_s elapsed in
+    print "frame rate: %s@." (Float.to_string_hum ~decimals:3 rate);
+    last_time := this_time
+  done;
+  print "frame rate loop stopped @."
 ;;
 
-let main' ~pool ~max_iter ~no_vsync ~mode ~clock ~stdout =
+let main' ~pool ~max_iter ~no_vsync ~mode ~mono_clock ~writer =
   let+ () = Sdl.init Sdl.Init.(video + events) in
   let state = State.create_exn ~pool ~no_vsync ~mode () in
-  Eio.Flow.copy_string "fibers starting\n" stdout;
+  print writer "fibers starting@.";
   Switch.run (fun sw ->
     Switch.on_release sw (fun () ->
       State.destroy state;
       Sdl.quit ());
-    fork_frame_rate_loop ~sw state clock stdout;
-    Fiber.fork ~sw (fun () -> render_loop state clock ~max_iter);
-    Fiber.fork ~sw (fun () -> event_loop state))
+    Fiber.fork_daemon ~sw (fun () ->
+      (* this is a daemon so that we don't have to wait [period] seconds for the program to exit *)
+      frame_rate_loop state mono_clock writer;
+      `Stop_daemon);
+    Fiber.fork ~sw (fun () -> render_loop state mono_clock ~max_iter);
+    Fiber.fork ~sw (fun () -> event_loop state));
+  print writer "switch shut down@."
 ;;
 
 let main max_iter no_vsync mode =
-  let pool =
-    let num_domains = Stdlib.Domain.recommended_domain_count () - 1 in
-    Task.setup_pool ~name:"compute-pool" ~num_domains ()
-  in
+  let num_domains = Stdlib.Domain.recommended_domain_count () - 2 in
+  let pool = Task.setup_pool ~name:"compute-pool" ~num_domains () in
   Eio_main.run (fun env ->
-    let clock = Eio.Stdenv.mono_clock env in
-    let stdout = Eio.Stdenv.stdout env in
-    main' ~pool ~max_iter ~no_vsync ~mode ~clock ~stdout)
+    let mono_clock = Eio.Stdenv.mono_clock env in
+    Write.with_flow (Eio.Stdenv.stderr env) (fun writer ->
+      print writer "#domains = %d@." num_domains;
+      main' ~pool ~max_iter ~no_vsync ~mode ~mono_clock ~writer))
 ;;
 
 let cmd =
