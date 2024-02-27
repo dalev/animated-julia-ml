@@ -49,7 +49,7 @@ let render_loop s mono_clock ~max_iter =
   done
 ;;
 
-let print f fmt = Fmt.pf f fmt
+let print f fmt = Write.printf f fmt
 
 let frame_rate_loop state mono_clock writer =
   let period = Mtime.Span.(3 * s) in
@@ -65,8 +65,7 @@ let frame_rate_loop state mono_clock writer =
     let rate = Float.of_int count /. span_to_s elapsed in
     print "frame rate: %s@." (Float.to_string_hum ~decimals:3 rate);
     last_time := this_time
-  done;
-  print "frame rate loop stopped @."
+  done
 ;;
 
 let main' ~pool ~max_iter ~no_vsync ~mode ~mono_clock ~writer =
@@ -82,8 +81,7 @@ let main' ~pool ~max_iter ~no_vsync ~mode ~mono_clock ~writer =
       frame_rate_loop state mono_clock writer;
       `Stop_daemon);
     Fiber.fork ~sw (fun () -> render_loop state mono_clock ~max_iter);
-    Fiber.fork ~sw (fun () -> event_loop state));
-  print writer "switch shut down@."
+    Fiber.fork ~sw (fun () -> event_loop state))
 ;;
 
 let main max_iter no_vsync mode =
@@ -91,14 +89,9 @@ let main max_iter no_vsync mode =
   let pool = Task.setup_pool ~name:"compute-pool" ~num_domains () in
   Eio_main.run (fun env ->
     let mono_clock = Eio.Stdenv.mono_clock env in
-    Write.with_flow (Eio.Stdenv.stdout env) (fun w ->
-      let f =
-        let out buf off len = Write.string w buf ~off ~len in
-        let flush () = () in
-        Stdlib.Format.make_formatter out flush
-      in
-      print f "#domains = %d@." num_domains;
-      main' ~pool ~max_iter ~no_vsync ~mode ~mono_clock ~writer:f))
+    Write.with_flow (Eio.Stdenv.stdout env) (fun writer ->
+      print writer "#domains = %d@." num_domains;
+      main' ~pool ~max_iter ~no_vsync ~mode ~mono_clock ~writer))
 ;;
 
 let cmd =
