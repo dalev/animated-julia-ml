@@ -34,20 +34,22 @@ let make_rgb hue i =
 ;;
 
 let color ?(max_iter = 64) zr zi c =
-  (* we manually unpack the components of z to avoid allocation in the loop *)
-  let rec loop i zr zi hue c =
-    let q = (Complex.norm2 [@inlined]) { re = zr; im = zi } in
-    if i <= 0 || Float.O.(q > 4.0)
-    then make_rgb hue i
-    else begin
-      let { Complex.re; im } = (Complex.sq [@inlined]) { re = zr; im = zi } in
-      let zr = re +. c.Complex.re
-      and zi = im +. c.Complex.im
-      and hue = hue +. Float.exp (-.q) in
-      loop (i - 1) zr zi hue c
-    end
-  in
-  loop max_iter zr zi 0.0 c
+  (* This loop is ugly, but it needs to be this way to avoid allocating a ton of boxed float values *)
+  let[@inline] mk_q re im = (Complex.norm2 [@inlined]) { re; im } in
+  let i = ref max_iter
+  and zr = ref zr
+  and zi = ref zi
+  and hue = ref 0.
+  and q = ref @@ mk_q zr zi in
+  while !i > 0 && Float.O.(!q <= 4.0) do
+    let { Complex.re; im } = (Complex.sq [@inlined]) { re = !zr; im = !zi } in
+    zr := re +. c.Complex.re;
+    zi := im +. c.Complex.im;
+    q := mk_q !zr !zi;
+    hue := !hue +. Float.exp (-. !q);
+    i := !i - 1
+  done;
+  make_rgb !hue !i
 ;;
 
 let pixel_to_complex ~width ~height x y =
