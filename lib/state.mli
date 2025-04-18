@@ -4,7 +4,7 @@ type t
 
 val is_running : t -> bool
 val integrate : t -> dt:float -> unit
-val make_handler : t -> _ Eio.Time.Mono.t -> Eio.Switch.t -> (Event.t -> unit) Staged.t
+val make_handler : t -> (Event.t -> unit) Staged.t
 val create_exn : pool:Domainslib.Task.pool -> no_vsync:bool -> mode:Mode.t -> unit -> t
 
 val render

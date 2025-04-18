@@ -13,31 +13,26 @@ let ( let+ ) m f =
   | Error (`Msg msg) -> Fmt.failwith "SDL failure: %s" msg
 ;;
 
-let event_loop state mclock switch =
-  let e = Sdl.Event.create () in
-  let handler = Staged.unstage @@ State.make_handler state mclock switch in
-  while State.is_running state do
-    if Sdl.poll_event (Some e)
-    then begin
-      match Sdl.Event.(enum (get e typ)) with
-      | `Drop_file -> Sdl.Event.drop_file_free e
-      | _ ->
-        let e = Event.of_sdl_event e in
-        handler e
-    end
-    else Fiber.yield ()
-  done
-;;
-
 let span_to_s span = Mtime.Span.to_float_ns span *. 1e-9
 
 let render_loop s mono_clock ~max_iter =
   let now () = Eio.Time.Mono.now mono_clock in
+  let handle_evts =
+    let handle_one = Staged.unstage @@ State.make_handler s in
+    let e = Sdl.Event.create () in
+    fun () ->
+      while Sdl.poll_event (Some e) do
+        match Sdl.Event.(enum (get e typ)) with
+        | `Drop_file -> Sdl.Event.drop_file_free e
+        | _ -> handle_one @@ Event.of_sdl_event e
+      done
+  in
   let dt = 1 // 100 in
   let last_time = ref @@ now () in
   let accum = ref 0.0 in
   while State.is_running s do
     let new_time = now () in
+    handle_evts ();
     let frame_time = Float.min (Mtime.span new_time !last_time |> span_to_s) 0.25 in
     accum := !accum +. frame_time;
     while Float.(!accum >= dt) do
@@ -80,8 +75,7 @@ let main' ~pool ~max_iter ~no_vsync ~mode ~mono_clock ~writer =
       (* this is a daemon so that we don't have to wait [period] seconds for the program to exit *)
       frame_rate_loop state mono_clock writer;
       `Stop_daemon);
-    Fiber.fork ~sw (fun () -> render_loop state mono_clock ~max_iter);
-    Fiber.fork ~sw (fun () -> event_loop state mono_clock sw))
+    Fiber.fork ~sw (fun () -> render_loop state mono_clock ~max_iter))
 ;;
 
 let main max_iter no_vsync mode =
