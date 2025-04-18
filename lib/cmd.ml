@@ -13,9 +13,9 @@ let ( let+ ) m f =
   | Error (`Msg msg) -> Fmt.failwith "SDL failure: %s" msg
 ;;
 
-let event_loop state =
+let event_loop state mclock switch =
   let e = Sdl.Event.create () in
-  let handler = Staged.unstage @@ State.make_handler state in
+  let handler = Staged.unstage @@ State.make_handler state mclock switch in
   while State.is_running state do
     if Sdl.poll_event (Some e)
     then begin
@@ -81,7 +81,7 @@ let main' ~pool ~max_iter ~no_vsync ~mode ~mono_clock ~writer =
       frame_rate_loop state mono_clock writer;
       `Stop_daemon);
     Fiber.fork ~sw (fun () -> render_loop state mono_clock ~max_iter);
-    Fiber.fork ~sw (fun () -> event_loop state))
+    Fiber.fork ~sw (fun () -> event_loop state mono_clock sw))
 ;;
 
 let main max_iter no_vsync mode =

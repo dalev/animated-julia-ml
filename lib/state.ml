@@ -73,7 +73,7 @@ let c t =
 
 let pixel_format = Sdl.Pixel.format_rgba8888
 
-let resize_texture t ~width ~height =
+let resize_texture t mclock switch ~width ~height =
   let+ texture =
     Sdl.create_texture
       t.renderer
@@ -84,10 +84,15 @@ let resize_texture t ~width ~height =
   in
   let old_texture = t.texture in
   t.texture <- texture;
-  Sdl.destroy_texture old_texture
+  Fiber.fork ~sw:switch (fun () ->
+    (* CR dalev: this is terrible; sync with the render loop so that the old
+       texture is destroyed at an opportune moment. *)
+    let span = Mtime.Span.(20 * ms) in
+    Eio.Time.Mono.sleep_span mclock span;
+    Sdl.destroy_texture old_texture)
 ;;
 
-let make_handler t =
+let make_handler t mclock switch =
   let handle_mouse_motion =
     match t.mode with
     | Animate -> fun ~x:_ ~y:_ -> ()
@@ -107,7 +112,7 @@ let make_handler t =
   | Ignored -> ()
   | Quit -> Promise.resolve t.stop_resolver ()
   | Mouse_motion { x; y } -> handle_mouse_motion ~x ~y
-  | Window_resize { width; height } -> resize_texture t ~width ~height
+  | Window_resize { width; height } -> resize_texture t mclock switch ~width ~height
 ;;
 
 let create_exn ~pool ~no_vsync ~mode () =
