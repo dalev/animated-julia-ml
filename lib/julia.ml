@@ -33,14 +33,14 @@ let make_rgb hue i =
   Rgba.make ~r:(f 5.0) ~g:(f 3.0) ~b:(f 1.0)
 ;;
 
-let color ?(max_iter = 64) zr zi c =
+let color ?(max_iter = 64) z c =
   (* This loop is ugly, but it needs to be this way to avoid allocating a ton of boxed float values *)
   let[@inline] mk_q re im = (Complex.norm2 [@inlined]) { re; im } in
   let i = ref max_iter
-  and zr = ref zr
-  and zi = ref zi
-  and hue = ref 0.
-  and q = ref @@ mk_q zr zi in
+  and zr = ref z.Complex.re
+  and zi = ref z.Complex.im
+  and hue = ref 0. in
+  let q = ref @@ mk_q !zr !zi in
   while !i > 0 && Float.O.(!q <= 4.0) do
     let { Complex.re; im } = (Complex.sq [@inlined]) { re = !zr; im = !zi } in
     zr := re +. c.Complex.re;
@@ -79,7 +79,6 @@ let blit buf ~pool ~width ~c ~max_iter =
       let x = offset % width
       and y = offset / width
       and pos = 4 * offset in
-      let { Complex.re = zr; im = zi } = pixel_to_z x y in
-      let rgba = color zr zi c ~max_iter in
+      let rgba = color (pixel_to_z x y) c ~max_iter in
       Bigstring.unsafe_set_uint32_le buf ~pos rgba))
 ;;
