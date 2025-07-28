@@ -21,7 +21,7 @@ type t =
   ; revolutions : FArray.t
   ; mutable out_of_date : bool
   ; mutable texture : Sdl.texture
-  ; mutable mouse : Complex.t
+  ; mutable mouse : int * int
   ; mutable frame_count : int
   }
 
@@ -66,7 +66,10 @@ let c t =
     if t.out_of_date
     then begin
       t.out_of_date <- false;
-      Some t.mouse
+      let+ width, height = Sdl.get_renderer_output_size t.renderer in
+      let x, y = t.mouse in
+      let c = Julia.pixel_to_complex ~width ~height x y in
+      Some c
     end
     else None
 ;;
@@ -93,11 +96,10 @@ let make_handler t =
     | Animate -> fun ~x:_ ~y:_ -> ()
     | Follow_mouse ->
       fun ~x ~y ->
-        let+ width, height = Sdl.get_renderer_output_size t.renderer in
-        let c' = Julia.pixel_to_complex ~width ~height x y in
-        if not Complex.(t.mouse = c')
+        let xy = x, y in
+        if not ([%equal: int * int] t.mouse xy)
         then begin
-          t.mouse <- c';
+          t.mouse <- xy;
           t.out_of_date <- true
         end
   in
@@ -132,7 +134,7 @@ let create_exn ~pool ~no_vsync ~mode () =
   ; stop
   ; stop_resolver
   ; texture
-  ; mouse = Complex.zero
+  ; mouse = w / 2, h / 2
   ; revolutions = FArray.init (FArray.length turns_per_sec_inv) ~f:(fun _ -> 0.0)
   ; out_of_date = true
   ; pool
