@@ -52,12 +52,11 @@ let color ?(max_iter = 64) z c =
   make_rgb !hue !i
 ;;
 
+let center i rlimit = 4.0 *. (((0.5 +. Float.of_int i) *. rlimit) -. 0.5)
+
 let pixel_to_complex ~width ~height x y =
-  let rwidth = 1 // width in
-  let rheight = 1 // height in
-  let center i rlimit = 4.0 *. (((0.5 +. Float.of_int i) *. rlimit) -. 0.5) in
-  let re = center x rwidth in
-  let im = center y rheight in
+  let re = center x (1 // width)
+  and im = center y (1 // height) in
   { Complex.re; im }
 ;;
 
@@ -68,7 +67,6 @@ let blit buf ~pool ~width ~c ~max_iter =
   let rwidth = 1 // width in
   let rheight = 1 // height in
   let pixel_to_z x y =
-    let center i rlimit = 4.0 *. (((0.5 +. Float.of_int i) *. rlimit) -. 0.5) in
     let re = center x rwidth in
     let im = center y rheight in
     { Complex.re; im }
