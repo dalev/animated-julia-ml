@@ -1,3 +1,4 @@
 (executable
+ (public_name animated_julia_bench)
  (name main)
  (libraries animated_julia domainslib core_bench core_unix.command_unix))
