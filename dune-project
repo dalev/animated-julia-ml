@@ -32,8 +32,13 @@
    (>= 0.5.2))
   (base_bigstring
    (>= v0.17.0))
-  ocaml
-  base
-  cmdliner
-  fmt
-  tsdl))
+  (ocaml
+   (>= 5.3.0))
+  (base
+   (>= 0.17.3))
+  (cmdliner
+   (>= 1.3.0))
+  (fmt
+   (>= 0.11.0))
+  (tsdl
+   (>= 1.1.0))))
