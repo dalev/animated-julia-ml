@@ -3,53 +3,26 @@ module Complex = Float_complex
 module Task = Domainslib.Task
 module Bigstring = Base_bigstring
 
-module Rgba : sig
-  type t = int
+let log2 x = Float.log2 x
 
-  val make : r:int -> g:int -> b:int -> t
-end = struct
-  type t = int
-
-  let make ~r ~g ~b =
-    let alpha = 0xff in
-    (r lsl 24) lor (g lsl 16) lor (b lsl 8) lor alpha
-  ;;
-end
-
-let clamp f = Float.clamp_exn f ~min:0.0 ~max:1.0
-
-let make_rgb hue i =
-  (* hsv -> rgb conversion from wikipedia *)
-  let open Float.O in
-  let h = 0.1 + (0.9 * clamp hue) in
-  let s = 1.0 in
-  let v = Float.of_int (min i 1) in
-  let to_byte f = Int.of_float_unchecked (f *. 255.0) in
-  let f n =
-    let k = Float.mod_float (n + (6.0 * h)) 6.0 in
-    let x = v * (1.0 - (s * clamp (Float.min k (4.0 - k)))) in
-    to_byte x
-  in
-  Rgba.make ~r:(f 5.0) ~g:(f 3.0) ~b:(f 1.0)
-;;
-
-let color ?(max_iter = 64) z c =
+let color ?(max_iter = 64) ~radius ~palette z c =
+  let r2 = radius *. radius in
+  let logB x = Float.log x /. Float.log radius in
   (* This loop is ugly, but it needs to be this way to avoid allocating a ton of boxed float values *)
   let[@inline] mk_q re im = (Complex.norm2 [@inlined]) { re; im } in
-  let i = ref max_iter
+  let i = ref 0
   and zr = ref z.Complex.re
-  and zi = ref z.Complex.im
-  and hue = ref 0. in
+  and zi = ref z.Complex.im in
   let q = ref @@ mk_q !zr !zi in
-  while !i > 0 && Float.O.(!q <= 4.0) do
+  while !i < max_iter && Float.O.(!q <= r2) do
     let { Complex.re; im } = (Complex.sq [@inlined]) { re = !zr; im = !zi } in
     zr := re +. c.Complex.re;
     zi := im +. c.Complex.im;
     q := mk_q !zr !zi;
-    hue := !hue +. Float.exp (-. !q);
-    i := !i - 1
+    i := !i + 1
   done;
-  make_rgb !hue !i
+  let di = log2 (logB (Float.sqrt !q)) in
+  Palette.find palette !i di
 ;;
 
 let center i rlimit = 4.0 *. (((0.5 +. Float.of_int i) *. rlimit) -. 0.5)
@@ -60,7 +33,7 @@ let pixel_to_complex ~width ~height x y =
   { Complex.re; im }
 ;;
 
-let blit buf ~pool ~width ~c ~max_iter =
+let blit buf ~pool ~width ~c ~max_iter ~radius ~palette =
   let num_pixels = Bigarray.Array1.dim buf / 4 in
   let finish = num_pixels - 1 in
   let height = num_pixels / width in
@@ -77,6 +50,6 @@ let blit buf ~pool ~width ~c ~max_iter =
       let x = offset % width
       and y = offset / width
       and pos = 4 * offset in
-      let rgba = color (pixel_to_z x y) c ~max_iter in
-      Bigstring.unsafe_set_uint32_le buf ~pos rgba))
+      let rgba = color (pixel_to_z x y) c ~max_iter ~radius ~palette in
+      Bigstring.unsafe_set_uint32_le buf ~pos (Rgba.to_int rgba)))
 ;;

@@ -8,4 +8,6 @@ val blit
   -> width:int
   -> c:Float_complex.t
   -> max_iter:int
+  -> radius:float
+  -> palette:Palette.t
   -> unit

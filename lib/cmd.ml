@@ -15,7 +15,7 @@ let ( let+ ) m f =
 
 let span_to_s span = Mtime.Span.to_float_ns span *. 1e-9
 
-let render_loop s mono_clock ~max_iter =
+let render_loop s mono_clock ~palette ~max_iter ~radius =
   let now () = Eio.Time.Mono.now mono_clock in
   let handle_evts =
     let handle_one = Staged.unstage @@ State.make_handler s in
@@ -39,7 +39,8 @@ let render_loop s mono_clock ~max_iter =
       State.integrate s ~dt;
       accum := !accum -. dt
     done;
-    State.render s ~f:(fun c buf width pool -> Julia.blit buf ~pool ~width ~c ~max_iter);
+    State.render s ~f:(fun c buf width pool ->
+      Julia.blit buf ~pool ~width ~c ~max_iter ~radius ~palette);
     last_time := new_time
   done
 ;;
@@ -63,7 +64,7 @@ let frame_rate_loop state mono_clock writer =
   done
 ;;
 
-let main' ~pool ~max_iter ~no_vsync ~mode ~mono_clock ~writer =
+let main' ~pool ~palette ~max_iter ~radius ~no_vsync ~mode ~mono_clock ~writer =
   let+ () = Sdl.init Sdl.Init.(video + events) in
   let state = State.create_exn ~pool ~no_vsync ~mode () in
   print writer "fibers starting@.";
@@ -75,17 +76,29 @@ let main' ~pool ~max_iter ~no_vsync ~mode ~mono_clock ~writer =
       (* this is a daemon so that we don't have to wait [period] seconds for the program to exit *)
       frame_rate_loop state mono_clock writer;
       `Stop_daemon);
-    Fiber.fork ~sw (fun () -> render_loop state mono_clock ~max_iter))
+    Fiber.fork ~sw (fun () -> render_loop state mono_clock ~palette ~max_iter ~radius))
 ;;
 
 let main max_iter no_vsync mode =
   let num_domains = Stdlib.Domain.recommended_domain_count () - 1 in
   let pool = Task.setup_pool ~name:"compute-pool" ~num_domains () in
+  let radius = 1000.0 in
+  let palette =
+    let first = Rgba.of_int 0xdccca3FF
+    and last = Rgba.of_int 0x90aa86FF
+    and stops =
+      [ 0.25, Rgba.of_int 0x824c71FF
+      ; 0.50, Rgba.of_int 0x4a2545FF
+      ; 0.75, Rgba.of_int 0x000001FF
+      ]
+    in
+    Palette.make ~first ~last ~stops ~size:max_iter
+  in
   Eio_main.run (fun env ->
     let mono_clock = Eio.Stdenv.mono_clock env in
     Write.with_flow (Eio.Stdenv.stdout env) (fun writer ->
       print writer "#domains = %d@." num_domains;
-      main' ~pool ~max_iter ~no_vsync ~mode ~mono_clock ~writer))
+      main' ~pool ~palette ~max_iter ~radius ~no_vsync ~mode ~mono_clock ~writer))
 ;;
 
 let cmd =
