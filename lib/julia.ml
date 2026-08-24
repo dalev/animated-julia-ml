@@ -21,7 +21,7 @@ let color ?(max_iter = 64) ~radius ~palette z c =
     q := mk_q !zr !zi;
     i := !i + 1
   done;
-  let di = log2 (logB (Float.sqrt !q)) in
+  let di = 1.0 -. log2 (logB (Float.sqrt !q)) in
   Palette.find palette !i di
 ;;
 
