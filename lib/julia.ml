@@ -3,10 +3,9 @@ module Complex = Float_complex
 module Task = Domainslib.Task
 module Bigstring = Base_bigstring
 
-let log2 x = Float.log2 x
-
 let color ?(max_iter = 64) ~radius ~palette z c =
   let r2 = radius *. radius in
+  let log2 x = Float.log2 x in
   let logB x = Float.log x /. Float.log radius in
   (* This loop is ugly, but it needs to be this way to avoid allocating a ton of boxed float values *)
   let[@inline] mk_q re im = (Complex.norm2 [@inlined]) { re; im } in
